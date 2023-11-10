@@ -1,0 +1,129 @@
+# StateForge
+
+> 새로운 상태관리 라이브러리!
+
+> - 진짜 쉽고 협업을 위한 상태관리를 만들어보자.
+> - 그동안은 너무 자유와 방종을 추구했다.
+> - 강력한 제한, 이렇게 밖에 쓸 수 없는 구조, 방식!
+> - 디버깅, 자동완성, 타입체킹 우선
+> - 그럼에도 외부 모듈 의존도 X
+
+## 특징
+
+### 강력한 타입 시스템과 자동완성
+- StateForge는 TypeScript의 강력한 타입 시스템을 기반으로 구축되었습니다. 이는 개발 중에 높은 수준의 자동완성 지원을 제공하며, 타입 관련 오류를 사전에 방지할 수 있게 해줍니다. 개발자가 코드를 작성할 때 필요한 속성이나 액션을 쉽게 찾을 수 있도록 도와줍니다.
+
+### 최소한의 보일러플레이트
+- Redux와 같은 기존의 상태 관리 라이브러리들은 많은 설정과 보일러플레이트 코드가 필요합니다. StateForge는 이런 부분을 대폭 간소화하여 개발자가 비즈니스 로직에 더 집중할 수 있도록 설계되었습니다. 필요한 기능을 몇 줄의 코드로 간결하게 표현할 수 있습니다.
+
+### 사전 구성된 필수 요소들
+- StateForge는 애플리케이션을 빠르게 시작할 수 있도록 사전에 필요한 많은 구성 요소들을 제공합니다. 이를 통해 개발자는 반복적인 설정 작업 없이 바로 상태 관리 로직의 구현에 착수할 수 있습니다.
+
+## 차별화 요소
+
+### Redux Toolkit 영감
+- StateForge는 Redux Toolkit의 영감을 받아 더 나은 개발 경험을 제공합니다. 하지만 StateForge는 타입 안전성과 자동완성을 개선하여 Redux Toolkit이 제공하는 것 이상의 개발자 경험을 제공합니다.
+
+### 직관적인 API
+- StateForge의 API는 직관적이며 사용하기 쉽습니다. 슬라이스 생성, 액션 정의, 스토어 구성 등의 과정이 단순화되어 있어, 새로운 개발자도 쉽게 상태 관리 시스템을 이해하고 사용할 수 있습니다.
+
+---
+
+### State & Action
+
+- Interface를 먼저 설계하고 개발하는 방식
+- State와 Action을 분리해서 개발하기 쉽게! BDD, SDD
+- 쓸데없은 ActionType, ActionCreator 이런거 NoNo!
+
+```ts
+import {type Collection, createStateForge} from "../libs/stateForge"
+
+export interface Todo {
+  id:number
+  text:string
+  completed:boolean
+}
+
+export type VisibilityFilter = "SHOW_ALL"|"SHOW_COMPLETED"|"SHOW_ACTIVE"
+
+interface Group {
+  filteredTodos:Array<Todo>
+}
+
+export interface TodoState {
+  todos:Array<Todo>
+  items:Collection<Todo>
+  visibilityFilter:VisibilityFilter
+  section: Group
+}
+
+export interface TodoActions {
+  ADD_TODO(text:string):void
+  TOGGLE_TODO(id:number):void
+  REMOVE_TODO(id:number):void
+  SET_VISIBILITY_FILTER(filter:VisibilityFilter):void
+}
+
+export const {
+  createSlice,
+  createEffect,
+  configureStore
+} = createStateForge<TodoActions, TodoState>("store")
+```
+
+
+### Slice
+- 데이터를 기반으로 모듈화
+- State와 Action의 자동완성
+- 외부 라이브러리가 필요없게 내장
+
+```ts
+import {createSlice} from "./index"
+
+export const todos = createSlice(store => store.todos, [], helpers => {
+
+  const {on, value, set, insert, remove, toggle} = helpers
+  
+  on.ADD_TODO((text) => {
+    const newTodo = {id: Date.now(), text, completed: false}
+    insert(newTodo)
+  })
+
+  on.TOGGLE_TODO((id) => {
+    toggle(todo => todo.id === id, "completed")
+  })
+
+  on.REMOVE_TODO((id) => {
+    remove(todo => todo.id === id)
+  })
+})
+
+export const visibilityFilter = createSlice(store => store.visibilityFilter, "SHOW_ALL", ({on, set}) => {
+  on.SET_VISIBILITY_FILTER(set)
+})
+```
+
+
+
+### Store
+
+- 강력한 중앙집권
+- 찾아가기 쉽게 네비게이션의 역할, 추후 디버깅 용이
+- strict 타입체킹, 빠진 slice가 있으면 타입에러
+
+```ts
+import {todos} from "./todos"
+import {configureStore} from "./index"
+import {items, visibilityFilter} from "./etc.ts"
+
+export const store = configureStore({
+  todos,
+  items,
+  visibilityFilter,
+  section: {
+    filteredTodos: []
+  }
+})
+```
+
+
