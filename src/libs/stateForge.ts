@@ -1,5 +1,8 @@
 // eslint-disable-next-line @typescript-eslint/ban-types
-type PrimitiveType = undefined|null|boolean|string|number|Function;
+import {getProperty, setProperty} from "dot-prop"
+import {useEffect, useState} from "react"
+
+type PrimitiveType = undefined|null|boolean|number|string
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 type DeepReadonly<T> = T extends Function|PrimitiveType ? T : T extends Array<infer U> ? ReadonlyArray<DeepReadonly<U>> : { readonly [P in keyof T]:DeepReadonly<T[P]> };
@@ -8,24 +11,12 @@ export interface Collection<T> {
   [id:string|number]:T
 }
 
-
-const listeners:Record<string, Function[]> = {}
-
-const emit = (type:string, payload:Array<unknown>) => {
-
-  console.warn("emit!", {type, payload}, listeners)
-
-  for (const handler of (listeners[type] ?? [])) {
-    handler(...payload)
-  }
-}
-
-const createPathProxy = <T>(path:string):T => {
+const createSelectorPathProxy = <T>(path:string):T => {
   let value:unknown = null
   return new Proxy(Function, {
-    get(_, prop) {
+    get(_, prop:string) {
       if (prop === "toString") return () => path
-      return createPathProxy(path + "." + prop.toString())
+      return createSelectorPathProxy(path + (/^\d/.test(prop) ? `[${prop}]` : `.${prop}`))
     },
     apply(_, __, argumentsList) {
       if (argumentsList.length === 0) return value
@@ -34,126 +25,230 @@ const createPathProxy = <T>(path:string):T => {
   }) as T
 }
 
-
-type Selector<State, T> = (store:State) => T
-
-type On<Actions> = { [K in keyof Actions]:(fn:Actions[K]) => void }
-
 type ArrayItemOf<T> = T extends (infer U)[] ? U : T;
 
-type Helper<T, Actions> = {
-  on:On<Actions>
-  set:(value:T) => T
-  value:T,
-  draft:T,
-
-  insert:(value:ArrayItemOf<T>) => ArrayItemOf<T>
-  toggle:(find:ArrayItemOf<T>) => ArrayItemOf<T>
-  remove:(find:ArrayItemOf<T>) => ArrayItemOf<T>
-}
+const IS_SLICE = Object.create(null)
+const IS_SELECTOR = Object.create(null)
 
 const proxy = {
   dispatch() {},
   on() {}
 }
 
-export const createStateForge = <Actions, State>(path:string) => {
+const __state__ = Object.create(null)
+// @FIXME: debug용
+globalThis.state = __state__
 
-  const ID = {}
+export const createStateForge = <Actions, State>(rootPath:string) => {
 
-  const store:State = createPathProxy(path)
+  const store:State = createSelectorPathProxy(rootPath)
 
-  const dispatch:Actions = new Proxy(proxy.dispatch, {
-    get(_, type:string) {
-      return (...payload:unknown[]) => {
-        emit(type, payload)
-      }
-    }
-  })
-
-  const createSlice = <T, V extends T>(path:(store:State) => T, initValue:V, fn:(t:Helper<T, Actions&State>) => void):T => {
-
-    const pathObject = path(store)
-
-    console.warn("pathObject", pathObject)
-    console.warn("pathString", pathObject.toString())
-
-    const actionHandlers = []
-
-    const on:On<Actions&State> = new Proxy(proxy.on, {
-      get(target, type:string) {
-        return (fn) => {
-          actionHandlers.push([type, fn])
-        }
-      },
-      apply(target, thisArg, argumentsList) {
-        //TODO
-      },
-    })
-
-    const helper = {
-      on
-    } as Helper<T>
-
-
-    pathObject({
-      ID,
-      initValue,
-      sliceFn: () => fn(helper),
-      actionHandlers,
-      invoked: false
-    })
-
-    return pathObject
+  interface Mutation {
+    path:string
+    value:unknown
+    state:State
   }
 
-  const createSelector = <T>(selector:Selector<State, T>, fn:Function, fn2:Function):T => {}
+  type MutationCallback = (mutation:Mutation) => void
+
+  const mutationObservers = new Set<MutationCallback>()
+
+  const SET = <T>(object:Record<string, unknown>, path:string, value:T):T => {
+    setProperty(object, path, value)
+    mutationObservers.forEach(fn => {
+      const mutation = {path, value, state: GET<State>(__state__, path)}
+      fn(mutation)
+    })
+    return value
+  }
+
+  const GET = <T>(object:Record<string, unknown>, path:string, defaultValue?:T):T => {
+    return getProperty(object, path, defaultValue)
+  }
+
+
+  type Selector<T> = (store:State) => T
+
+  type On<Actions> = { [K in keyof Actions]:(fn:Actions[K]) => void }
+
+  interface Helper<T> {
+    on:On<Actions>
+
+    initValue:T,
+    draft:T,
+
+    set(value:T):T
+    set(setter:((self:T) => T)):T
+
+    insert:(value:ArrayItemOf<T>) => ArrayItemOf<T>
+    toggle:(find:ArrayItemOf<T>) => ArrayItemOf<T>
+    remove:(find:ArrayItemOf<T>) => ArrayItemOf<T>
+  }
+
+  const createSlice = <T, V extends T>(selector:Selector<T>, initValue:V, fn:(t:Helper<T>) => void):T => {
+
+    const slice = selector(store)
+    const path = slice.toString()
+
+    console.warn(path, "[createSlice]")
+
+    // actionHandlers
+    const actionHandlers = []
+
+    const createStateHelper = <T>():Helper<T> => {
+      const on:On<Actions> = new Proxy(proxy.on, {
+        get: (target, type:string) => (fn) => {
+          actionHandlers.push([type, fn])
+        },
+        apply(target, thisArg, argumentsList) {
+          //TODO
+        },
+      })
+
+      const set = <T>(value:T):T => {
+        if (typeof value === "function") {
+          return SET(__state__, path, value(GET(__state__, path, value)))
+        }
+        SET(__state__, path, value)
+        return value
+      }
+
+      const insert = <T>(value:T):T => value
+
+      const draft = createSelectorPathProxy<T>("")
+
+      return {
+        initValue,
+
+        on,
+        draft,
+        set,
+
+        insert,
+      }
+    }
+
+    slice({
+      type: IS_SLICE,
+      path: slice.toString(),
+      value: initValue,
+      actionHandlers: null,
+      setup() {
+        fn(createStateHelper())
+        this.actionHandlers = [...actionHandlers]
+      },
+    })
+
+    return slice
+  }
+
+  const createSelector = <T>(selector:((state:State) => T)):T => {
+    return selector(store)
+  }
 
   const createQuery = <T>():T => {}
 
   const createEffect = () => {}
 
+  const createStore = (slices:State, options = {}) => {
 
-  // -- configureStore
-  const configureStore = (slices:State, options = {}) => {
-    console.warn("configureStore")
+    const actionHandlers:Record<string, Function[]> = Object.create(null)
 
-    const state = Object.fromEntries(Object.entries(slices).map(([key, value]) => {
-
-      if (typeof value === "function") {
-        const res = value()
-        if (res.ID === ID) {
-          console.warn(">>>>>>>>>>>>>>>>>>>> res.invokedres.invoked", res.invoked, value.toString())
-          if (!res.invoked) {
-            res.invoked = true
-            res.sliceFn()
-            value = res.initValue
-          }
+    const dispatch:() => void = new Proxy(proxy.dispatch, {
+      get: (_, type:string) => (...payload:unknown[]) => {
+        for (const handler of (actionHandlers[type] ?? [])) {
+          handler(...payload)
         }
       }
+    })
 
-      // @TODO: 2단, 3단에 대한 처리가 필요하다!
+    // @TODO: 여기 코드 꼭 정리하자!!
+    const composeSlice = (slices) => {
+      if (!slices || typeof slices !== "object") {
+        return slices
+      }
 
-      return [key, value]
-    }))
+      return Object.fromEntries(Object.entries(slices).map(([key, value]) => {
 
+        // @FIXME: 일단 구현하고 정리하자!
+        if (typeof value === "function") {
+          const slice = value()
 
-    window.state = state
+          //
+          if (slice.type === IS_SLICE) {
+            if (!slice.actionHandlers) {
+              slice.setup()
+              console.warn(`[${slice.path}]:setup()`, slice.actionHandlers)
+            }
 
-    const select = <T>(selector:Selector<State, T>):T => createPathProxy(selector(store).toString())
+            // register handlers
+            for (const [type, handler] of slice.actionHandlers) {
+              actionHandlers[type] = actionHandlers[type] ?? []
+              actionHandlers[type].push(handler)
+            }
+
+            value = slice.value
+          }
+
+          if (slice.type === IS_SELECTOR) {
+            console.warn("selector!!!")
+          }
+        }
+        else {
+          value = composeSlice(value)
+        }
+
+        return [key, value]
+      }))
+    }
+
+    // @FIXME: 일단 구현하고 정리하자!
+    const initState = composeSlice(slices)
+    SET(__state__, rootPath, initState)
+
+    const select = <T>(selector:Selector<T>):T => {
+      const path = selector(store).toString()
+      return GET<T>(__state__, path)
+    }
+
+    const subscribe = (fn:(mutation:Mutation) => void) => {
+      mutationObservers.add(fn)
+      return () => void mutationObservers.delete(fn)
+    }
+
+    // for React
+    const useSelect = <T>(selector:Selector<T>):T => {
+      const path = selector(store).toString()
+      const initValue = GET<T>(__state__, path)
+
+      const [value, setValue] = useState<T>(initValue)
+      useEffect(() => {
+        return subscribe(mutation => {
+          console.warn({mutation})
+          if (mutation.path === path) {
+            setValue(mutation.value as T)
+          }
+        })
+      })
+
+      return value
+    }
 
     return {
-      state,
       select,
-      dispatch
+      dispatch,
+      subscribe,
+
+      // for React
+      useSelect,
     }
   }
 
   return {
     createSlice,
     createSelector,
-    createQuery,
     createEffect,
-    configureStore,
+    createQuery,
+    createStore,
   }
 }

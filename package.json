@@ -1,5 +1,5 @@
 {
-  "name": "newstatelib",
+  "name": "state-forge",
   "private": true,
   "version": "0.0.0",
   "type": "module",
@@ -19,6 +19,8 @@
     "@typescript-eslint/eslint-plugin": "^6.10.0",
     "@typescript-eslint/parser": "^6.10.0",
     "@vitejs/plugin-react": "^4.1.1",
+    "adorable-css": "^1.6.0",
+    "dot-prop": "^8.0.2",
     "eslint": "^8.53.0",
     "eslint-plugin-react-hooks": "^4.6.0",
     "eslint-plugin-react-refresh": "^0.4.4",

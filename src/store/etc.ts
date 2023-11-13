@@ -1,9 +1,9 @@
-import {createEffect, createSlice} from "./index.ts"
+import {createEffect, createSlice} from "./@schema.ts"
 
 
 export const items = createSlice(store => store.items, {}, ({on, draft}) => {
 
-  console.log("items! 222")
+  console.log("items!!")
 
   on.댓글창_열기(id => draft[id].isShowReply = true)
 
@@ -11,9 +11,9 @@ export const items = createSlice(store => store.items, {}, ({on, draft}) => {
 })
 
 
-export const visibilityFilter = createSlice(store => store.visibilityFilter, "SHOW_ALL", ({on, set}) => {
+export const visibilityFilter = createSlice(store => store.visibilityFilter, "SHOW_COMPLETED", ({on, set}) => {
 
-  console.log("visibilityFilter! 2222")
+  console.log("visibilityFilter! 2222 44")
 
   on.SET_VISIBILITY_FILTER(set)
 })

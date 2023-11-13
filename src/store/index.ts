@@ -1,45 +1,22 @@
-import {type Collection, createStateForge} from "../libs/stateForge"
+import {createStore} from "./@schema.ts"
+import {filteredTodos, todos} from "./todos"
+import {items, visibilityFilter} from "./etc"
+import count from "./count.ts"
 
-export interface Todo {
-  id:number
-  text:string
-  completed:boolean
-}
 
-export type VisibilityFilter = "SHOW_ALL"|"SHOW_COMPLETED"|"SHOW_ACTIVE"
+export const store = createStore({
+  account: {
+    id:"",
+    email:"",
+    name:"",
+  },
 
-interface Group {
-  filteredTodos:Array<Todo>
-  optionedTodos?:Array<Todo>
-}
+  todos,
+  visibilityFilter,
+  items,
+  count,
 
-export interface ShortView {
-  id:number
-  isShowReply:boolean
-  isShowEndingCard:boolean
-  isShowVote:boolean
-  isShowAnswer:boolean
-}
-
-export interface TodoState {
-  todos:Array<Todo>
-  items:Collection<ShortView>
-  visibilityFilter:VisibilityFilter
-  section: Group
-}
-
-export interface TodoActions {
-  ADD_TODO(text:string):void
-  TOGGLE_TODO(id:number):void
-  REMOVE_TODO(id:number):void
-
-  SET_VISIBILITY_FILTER(filter:VisibilityFilter):void
-}
-
-export const {
-  createSlice,
-  createEffect,
-  createQuery,
-  createSelector,
-  configureStore
-} = createStateForge<TodoActions, TodoState>("state")
+  query: {
+    filteredTodos
+  },
+})
