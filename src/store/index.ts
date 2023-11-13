@@ -1,14 +1,13 @@
-import {createStore} from "./@schema.ts"
-import {filteredTodos, todos} from "./todos"
-import {items, visibilityFilter} from "./etc"
-import count from "./count.ts"
-
+import {items, visibilityFilter} from "./slices/etc.ts"
+import {createStore} from "./@forge.ts"
+import {filteredTodos, todos} from "./slices/todos.ts"
+import count from "./slices/count.ts"
 
 export const store = createStore({
   account: {
-    id:"",
-    email:"",
-    name:"",
+    id: "",
+    email: "",
+    name: "",
   },
 
   todos,
@@ -16,7 +15,8 @@ export const store = createStore({
   items,
   count,
 
-  query: {
-    filteredTodos
+  Query: {
+    filteredTodos,
+    remainTodoCount: 0,
   },
 })

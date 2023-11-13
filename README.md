@@ -1,4 +1,6 @@
-# StateForge
+# 🚧 StateForge
+
+> 📌 아직 완성되지 않았습니다. 만들어 보고 있는 중입니다!
 
 **StateForge**는 TypeScript 기반의 상태 관리 라이브러리로, Redux의 핵심 개념을 유지하면서 타입 안전성과 개발자 경험을 최적화하기 위해 설계되었습니다. 이 라이브러리는 상태 관리를 간소화하고, 타입 추론을 활용하여 개발자가 직면할 수 있는 복잡성을 최소화합니다. 목표는 코드의 일관성을 높이고, 팀 내 표준화를 촉진하는 것입니다.
 
@@ -7,9 +9,6 @@
 - 자동 타입 추론: 복잡한 타입 정의 없이 최대한 자동 추론을 활용하여 개발자의 부담을 줄입니다.
 - 간결하고 명확한 API: Redux의 기본 원칙을 유지하면서, 사용하기 쉬운 API를 제공합니다.
 - 코드 일관성 및 표준화: 프로젝트 내에서 일관된 코드 스타일과 구조를 촉진합니다.
-
-
-> 새로운 상태관리 라이브러리!
 
 > - 진짜 쉽고 협업을 위한 상태관리를 만들어보자.
 > - 그동안은 너무 자유와 방종을 추구했다.
@@ -45,8 +44,6 @@
 - 쓸데없은 ActionType, ActionCreator 이런거 NoNo!
 
 ```ts
-import {type Collection, createStateForge} from "../libs/stateForge"
-
 export interface Todo {
   id:number
   text:string
@@ -55,7 +52,7 @@ export interface Todo {
 
 export type VisibilityFilter = "SHOW_ALL"|"SHOW_COMPLETED"|"SHOW_ACTIVE"
 
-interface Group {
+interface Query {
   filteredTodos:Array<Todo>
 }
 
@@ -63,21 +60,26 @@ export interface TodoState {
   todos:Array<Todo>
   items:Collection<Todo>
   visibilityFilter:VisibilityFilter
-  section: Group
+  Query: Query
 }
 
 export interface TodoActions {
   ADD_TODO(text:string):void
   TOGGLE_TODO(id:number):void
   REMOVE_TODO(id:number):void
+
   SET_VISIBILITY_FILTER(filter:VisibilityFilter):void
 }
+```
+
+```ts
+import {createStateForge} from "stateForge"
 
 export const {
   createSlice,
   createEffect,
-  configureStore
-} = createStateForge<TodoActions, TodoState>("store")
+  createStore
+} = createStateForge<TodoState, TodoActions>("store")
 ```
 
 
@@ -122,10 +124,10 @@ export const visibilityFilter = createSlice(store => store.visibilityFilter, "SH
 
 ```ts
 import {todos} from "./todos"
-import {configureStore} from "./index"
+import {createStore} from "./index"
 import {items, visibilityFilter} from "./etc.ts"
 
-export const store = configureStore({
+export const store = createStore({
   todos,
   items,
   visibilityFilter,
@@ -143,10 +145,32 @@ export const store = configureStore({
 on.ADD_TODO((text) => {
 
     // @TODO: anti-pattern
-    // 1. 외부 값이 필요하면 payload에 넣어라.
-    // 2. account를 매번 넣어주는게 부담스럽다면 미들웨어를 사용하라!
+    // 1. 외부 값을 가져오지 못하게 하기
     const account = state.account
+    const todo = {id:guid(), title:text, userId: account.id} 
 ```
 
 
+```ts
+// 리덕스는 리듀서를 순수하게 만들어야 한다!
+
+createSlice(... => {
+// 1. 외부 값이 필요하면 payload에 넣어라.
+  on.ADD_TODO((text, account) => {
+    const todo = {id: guid(), title: text, userId: account.id}
+    //..
+  })
+})
+
+
+// 리덕스는 이렇게 하던데.. 검토해보기...
+const accountMiddleware = createMiddleware( ... => {
+  // 2. account를 매번 넣어주는게 부담스럽다면 미들웨어를 사용하라!
+  on.ADD_TODO(text, (dispatch) => {
+    const account = state.account
+    dispatch.ADD_TODO(text, account)
+  })
+})
+
+```
 

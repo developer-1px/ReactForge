@@ -39,7 +39,7 @@ const __state__ = Object.create(null)
 // @FIXME: debug용
 globalThis.state = __state__
 
-export const createStateForge = <Actions, State>(rootPath:string) => {
+export const createStateForge = <State, Actions>(rootPath:string) => {
 
   const store:State = createSelectorPathProxy(rootPath)
 
@@ -78,7 +78,7 @@ export const createStateForge = <Actions, State>(rootPath:string) => {
     draft:T,
 
     set(value:T):T
-    set(setter:((self:T) => T)):T
+    set(setter:((prev:T) => T)):T
 
     insert:(value:ArrayItemOf<T>) => ArrayItemOf<T>
     toggle:(find:ArrayItemOf<T>) => ArrayItemOf<T>
@@ -154,7 +154,7 @@ export const createStateForge = <Actions, State>(rootPath:string) => {
 
     const actionHandlers:Record<string, Function[]> = Object.create(null)
 
-    const dispatch:() => void = new Proxy(proxy.dispatch, {
+    const dispatch:Actions = new Proxy(proxy.dispatch, {
       get: (_, type:string) => (...payload:unknown[]) => {
         for (const handler of (actionHandlers[type] ?? [])) {
           handler(...payload)

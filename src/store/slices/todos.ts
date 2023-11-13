@@ -1,4 +1,4 @@
-import {createQuery, createSelector, createSlice} from "./@schema.ts"
+import {createQuery, createSelector, createSlice} from "../@forge.ts"
 
 export const todos = createSlice(store => store.todos, [], ({on, set, draft, insert, remove, toggle}) => {
 
@@ -32,7 +32,7 @@ export const filteredTodos = createSelector((state) => {
   if (state.visibilityFilter === "SHOW_ACTIVE") {
     return state.todos.filter(todo => todo.completed)
   }
-  return todos
+  return state.todos
 })
 
 export const queryEventsByDate = createQuery((date:string) => store => [store.todos, store.visibilityFilter], ([todos, visibilityFilter]) => {

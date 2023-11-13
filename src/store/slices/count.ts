@@ -1,4 +1,4 @@
-import {createSlice} from "./@schema.ts"
+import {createSlice} from "../@forge.ts"
 
 export default createSlice(store => store.count, 100, ({on, set}) => {
 

@@ -1,5 +1,9 @@
-import {createEffect, createSlice} from "./@schema.ts"
+import {createEffect, createSlice} from "../@forge.ts"
 
+export interface TestActions {
+  댓글창_열기(id:string):void
+  댓글창_닫기(id:string):void
+}
 
 export const items = createSlice(store => store.items, {}, ({on, draft}) => {
 

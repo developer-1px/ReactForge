@@ -1,4 +1,5 @@
-import {type Collection, createStateForge} from "../libs/stateForge"
+import {Collection} from "../libs/stateForge"
+import {TestActions} from "./slices/etc.ts"
 
 export interface Todo {
   id:number
@@ -15,11 +16,6 @@ export interface Account {
 
 export interface Database {
   Todo:Todo
-
-  Query:{
-    filteredTodos:Array<Todo>
-    remainTodoCount:number
-  }
 }
 
 export type VisibilityFilter = "SHOW_ALL"|"SHOW_COMPLETED"|"SHOW_ACTIVE"
@@ -34,13 +30,21 @@ export interface ShortView {
 
 export interface State {
   account:Account
+
   todos:Array<Todo>
-  items:Collection<ShortView>
   visibilityFilter:VisibilityFilter
+
+  items:Collection<ShortView>
+
   count:number
+
+  Query:{
+    filteredTodos:Array<Todo>
+    remainTodoCount:number
+  }
 }
 
-export interface Actions {
+export interface Actions extends TestActions {
   ADD_TODO(text:string):void
   TOGGLE_TODO(id:number):void
   REMOVE_TODO(id:number):void
@@ -52,11 +56,3 @@ export interface Actions {
   INCREASE():void
   DECREASE():void
 }
-
-export const {
-  createSlice,
-  createEffect,
-  createQuery,
-  createSelector,
-  createStore
-} = createStateForge<Actions, State>("app")
