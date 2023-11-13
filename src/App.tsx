@@ -19,10 +19,15 @@ function App() {
 
   useEffect(() => {
     async function getPosts() {
-      const posts = await api.GET.posts.recommend({lastKey:100, inc:"222", x:100})
-      console.log({posts})
-      console.log("posts.data", posts.data)
+      const res = await api.GET["/posts/recommend"]()
+      console.log(res.data.data.list)
+
+      const {data: {data: post}} = await api.GET["/posts/:postId"]("7yKG9ccNK82")
+      console.log({post})
+
+      // const res = await api.POST["/calendars/:calendarId"]("!23123", {x:100}, {lastKey:100})
     }
+
     void getPosts()
   }, [])
 

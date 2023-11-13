@@ -137,6 +137,62 @@ export const store = createStore({
 })
 ```
 
+
+### Create API
+
+```ts
+type Response<T> = createResponse<{
+  status:number,
+  data:T
+}>
+
+interface API_Post {
+  GET:{
+    ["/posts/recommend"]():Response<{lastKey:string, list:Post[]}>
+    ["/posts/:postId"](postId:string):Response<Post>
+    ["/posts/:postId/comments"](postId:string, params?:unknown):Response<Comment[]>
+  }
+}
+
+interface API_Calendar {
+  GET:{
+    ["/calendars"]():Response<Calendar[]>
+    ["/calendars/:calendarId"](calendarId:string):Response<Calendar>
+  }
+
+  POST:{
+    ["/calendars/:calendarId"](calendarId:string, body:Calendar, q:{lastKey:string}):Response<Calendar>
+  }
+
+  PUT:{
+    ["/calendars/:calendarId"]():Response<Calendar>
+  }
+}
+
+type API
+  = API_Post
+  & API_Calendar
+
+export const api = createAPI<API>({
+  baseURL: "https://uc-api.ep.oror.io/api",
+  fetchOptions: {}
+})
+```
+
+### API 사용방법
+
+```ts
+const res = await api.GET["/posts/recommend"]()
+console.log(res.data.data.list)
+
+// pahh, queryString
+const res2 = await api.GET["/posts/:postId"]("7yKG9ccNK82", {lastKey:100})
+console.log(res2)
+
+// path, body, queryString
+const res3 = await api.POST["/calendars/:calendarId"]("!23123", {x:100}, {lastKey:100})
+```
+
 ## 생각해보기.. 메모.. 인사이트..
 
 ---

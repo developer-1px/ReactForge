@@ -2,13 +2,13 @@
 import {getProperty, setProperty} from "dot-prop"
 import {useEffect, useState} from "react"
 
-type PrimitiveType = undefined|null|boolean|number|string
+type PrimitiveType = undefined | null | boolean | number | string
 
 // eslint-disable-next-line @typescript-eslint/ban-types
-type DeepReadonly<T> = T extends Function|PrimitiveType ? T : T extends Array<infer U> ? ReadonlyArray<DeepReadonly<U>> : { readonly [P in keyof T]:DeepReadonly<T[P]> };
+type DeepReadonly<T> = T extends Function | PrimitiveType ? T : T extends Array<infer U> ? ReadonlyArray<DeepReadonly<U>> : { readonly [P in keyof T]:DeepReadonly<T[P]> };
 
 export interface Collection<T> {
-  [id:string|number]:T
+  [id:string | number]:T
 }
 
 const createSelectorPathProxy = <T>(path:string):T => {
@@ -78,6 +78,7 @@ export const createStateForge = <State, Actions>(rootPath:string) => {
     draft:T,
 
     set(value:T):T
+
     set(setter:((prev:T) => T)):T
 
     insert:(value:ArrayItemOf<T>) => ArrayItemOf<T>
@@ -146,9 +147,11 @@ export const createStateForge = <State, Actions>(rootPath:string) => {
     return selector(store)
   }
 
-  const createQuery = <T>():T => {}
+  const createQuery = <T>():T => {
+  }
 
-  const createEffect = () => {}
+  const createEffect = () => {
+  }
 
   const createStore = (slices:State, options = {}) => {
 
@@ -173,6 +176,11 @@ export const createStateForge = <State, Actions>(rootPath:string) => {
         // @FIXME: 일단 구현하고 정리하자!
         if (typeof value === "function") {
           const slice = value()
+
+          // @FIXME
+          if (!slice) {
+            return [key, value]
+          }
 
           //
           if (slice.type === IS_SLICE) {
