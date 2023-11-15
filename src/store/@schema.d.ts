@@ -1,4 +1,4 @@
-import {Collection} from "../libs/stateForge"
+import {Collection} from "../libs/state/stateForge.ts"
 import {TestActions} from "./slices/etc.ts"
 
 export interface Todo {

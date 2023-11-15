@@ -91,7 +91,7 @@ export const createStateForge = <State, Actions>(rootPath:string) => {
     const slice = selector(store)
     const path = slice.toString()
 
-    console.warn(path, "[createSlice]")
+    console.warn("[createSlice]", path)
 
     // actionHandlers
     const actionHandlers = []
@@ -157,13 +157,13 @@ export const createStateForge = <State, Actions>(rootPath:string) => {
 
     const actionHandlers:Record<string, Function[]> = Object.create(null)
 
-    const dispatch:Actions = new Proxy(proxy.dispatch, {
+    const dispatch = new Proxy(proxy.dispatch, {
       get: (_, type:string) => (...payload:unknown[]) => {
         for (const handler of (actionHandlers[type] ?? [])) {
           handler(...payload)
         }
       }
-    })
+    }) as Actions
 
     // @TODO: 여기 코드 꼭 정리하자!!
     const composeSlice = (slices) => {

@@ -1,7 +1,7 @@
 import {createQuery, createSelector, createSlice} from "../@forge.ts"
 
 export const todos = createSlice(store => store.todos, [], ({on, set, draft, insert, remove, toggle}) => {
-
+  
   on.ADD_TODO(text => {
 
     const newTodo = {id: Date.now(), text, completed: false}

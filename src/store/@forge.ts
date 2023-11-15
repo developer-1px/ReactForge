@@ -1,4 +1,4 @@
-import {createStateForge} from "../libs/stateForge.ts"
+import {createStateForge} from "../libs/state/stateForge.ts"
 import {Actions, State} from "./@schema"
 
 export const {
