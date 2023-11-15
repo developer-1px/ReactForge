@@ -7,8 +7,6 @@ export interface TestActions {
 
 export const items = createSlice(store => store.items, {}, ({on, draft}) => {
 
-  console.log("items!!")
-
   on.댓글창_열기(id => draft[id].isShowReply = true)
 
   on.댓글창_닫기(id => draft[id].isShowReply = false)
@@ -16,8 +14,6 @@ export const items = createSlice(store => store.items, {}, ({on, draft}) => {
 
 
 export const visibilityFilter = createSlice(store => store.visibilityFilter, "SHOW_COMPLETED", ({on, set}) => {
-
-  console.log("visibilityFilter! 2222 44")
 
   on.SET_VISIBILITY_FILTER(set)
 })

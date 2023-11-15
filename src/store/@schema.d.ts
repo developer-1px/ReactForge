@@ -53,6 +53,6 @@ export interface Actions extends TestActions {
 }
 
 export interface Actions {
-  INCREASE():void
+  INCREASE(amount:number):void
   DECREASE():void
 }

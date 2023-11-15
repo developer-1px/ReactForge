@@ -54,6 +54,8 @@ export const createStateForge = <State, Actions>(rootPath:string) => {
   const mutationObservers = new Set<MutationCallback>()
 
   const SET = <T>(object:Record<string, unknown>, path:string, value:T):T => {
+    console.warn("SET", path, value)
+
     setProperty(object, path, value)
     mutationObservers.forEach(fn => {
       const mutation = {path, value, state: GET<State>(__state__, path)}
@@ -63,7 +65,10 @@ export const createStateForge = <State, Actions>(rootPath:string) => {
   }
 
   const GET = <T>(object:Record<string, unknown>, path:string, defaultValue?:T):T => {
-    return getProperty(object, path, defaultValue)
+
+    const v = getProperty(object, path, defaultValue)
+    console.warn("GET", path, v)
+    return v
   }
 
 
@@ -91,24 +96,32 @@ export const createStateForge = <State, Actions>(rootPath:string) => {
     const slice = selector(store)
     const path = slice.toString()
 
-    console.warn("[createSlice]", path)
+    console.warn("[createSlice]", path, initValue)
 
     // actionHandlers
     const actionHandlers = []
 
+    const on:On<Actions> = new Proxy(proxy.on, {
+      get: (target, type:string) => (fn) => {
+        actionHandlers.push([type, fn])
+      },
+      apply(target, thisArg, argumentsList) {
+        //TODO
+      },
+    })
+
     const createStateHelper = <T>():Helper<T> => {
-      const on:On<Actions> = new Proxy(proxy.on, {
-        get: (target, type:string) => (fn) => {
-          actionHandlers.push([type, fn])
-        },
-        apply(target, thisArg, argumentsList) {
-          //TODO
-        },
-      })
 
       const set = <T>(value:T):T => {
         if (typeof value === "function") {
-          return SET(__state__, path, value(GET(__state__, path, value)))
+          console.warn("prev", GET(__state__, path))
+          console.warn("fn", value)
+
+          const result = value(GET(__state__, path))
+
+          console.log({result})
+
+          return SET(__state__, path, value(GET(__state__, path)))
         }
         SET(__state__, path, value)
         return value
@@ -153,15 +166,25 @@ export const createStateForge = <State, Actions>(rootPath:string) => {
   const createEffect = () => {
   }
 
-  const createStore = (slices:State, options = {}) => {
+
+  const defaultMiddleware = (store) => (next) => (type:string, args:unknown[]) => next(type, args)
+
+  const createStore = (slices:State, middleware = defaultMiddleware) => {
+
+    const $dispatch = (type:string, args:unknown[]) => {
+      for (const handler of actionHandlers[type] ?? []) {
+        handler(...args)
+      }
+    }
+
+    const $middleware = middleware(store)($dispatch)
 
     const actionHandlers:Record<string, Function[]> = Object.create(null)
 
     const dispatch = new Proxy(proxy.dispatch, {
       get: (_, type:string) => (...payload:unknown[]) => {
-        for (const handler of (actionHandlers[type] ?? [])) {
-          handler(...payload)
-        }
+        console.warn({payload})
+        $middleware(type, payload)
       }
     }) as Actions
 

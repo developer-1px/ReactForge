@@ -19,7 +19,7 @@ interface Comment {
   id:string
 }
 
-interface API_Post {
+export interface API_Post {
   GET:{
     ["/posts/recommend"](query:{lastKey:number}):Response<{lastKey:number, list:Post[]}>
     ["/posts/:postId"](postId:string):Response<Post>
@@ -27,7 +27,7 @@ interface API_Post {
   }
 }
 
-interface API_Calendar {
+export interface API_Calendar {
   GET:{
     ["/calendars"]():Response<Calendar[]>
     ["/calendars/:calendarId"](calendarId:string):Response<Calendar>

@@ -3,6 +3,13 @@ import {createStore} from "./@forge.ts"
 import {filteredTodos, todos} from "./slices/todos.ts"
 import count from "./slices/count.ts"
 
+const middleware = (store) => (next) => (type, args) => {
+  console.group(type+"(", ...args, ")")
+  const res = next(type, args)
+  console.groupEnd()
+  return res
+}
+
 export const store = createStore({
   account: {
     id: "",
@@ -19,4 +26,4 @@ export const store = createStore({
     filteredTodos,
     remainTodoCount: 0,
   },
-})
+}, middleware)
