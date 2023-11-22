@@ -4,6 +4,16 @@
 
 **ReactForge**는 All-in-One 프론트엔드 개발툴을 지향합니다.
 
+```ts
+// @TODO
+
+// 1. reducer를 pull 방식으로 바꿀것
+// 2. computed를 호출하고나면 deps 계산해서 cache와 invalidate를 구현하기
+// 3. reducer에서 현재 리듀서의 path가 아닌 다른 값을 수정하고 있다면 경고창 띄워주기!! (use Effect Insted Reducer)
+
+```
+
+
 
 ### 주요 특징
 - 중앙 집권형 개발방식

@@ -16,15 +16,30 @@ interface Todo {
   completed: boolean
 }
 
+type VisibilityFilter = "SHOW_ALL" | "SHOW_COMPLETED" | "SHOW_ACTIVE"
+
 interface State {
+  Query: {
+    todos: Array<Todo>
+    filteredTodos: Array<Todo>
+    numRemainingTodos: number
+  }
+
   Todo: Record<string, Todo>
 
-  todos: Todo[]
-  filteredTodos: Todo[]
+  visibilityFilter: VisibilityFilter
 }
 
 interface Actions {
   ADD_TODO(title: string): void
+  TOGGLE_TODO(id: number): void
+  UPDATE_TODO(title: string): void
+  REMOVE_TODO(id: number): void
+
+  REMOVE_ALL(): void
+  CLEAR_COMPLETED(): void
+
+  SET_VISIBILITY_FILTER(filter: VisibilityFilter): void
 }
 
 export const {store, dispatch, reducer, useStore, subscribe} = createStore<Actions, State>()

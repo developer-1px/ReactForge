@@ -12,8 +12,8 @@ const getValue = (root: unknown, path: string[]) => {
   return obj ? obj.valueOf() : obj
 }
 
-const handleProxy = <T>(getValue, override: ProxyHandler<T>) =>
-  new Proxy(
+const handleProxy = <T>(getValue, override: ProxyHandler<T>) => {
+  return new Proxy(
     {},
     {
       get(target, p, receiver) {
@@ -22,6 +22,7 @@ const handleProxy = <T>(getValue, override: ProxyHandler<T>) =>
       },
     }
   )
+}
 
 const createStoreProxy = <T>(root: T, notify: Function, path: string[] = [], deps = new Set()): T => {
   const get = () => getValue(root, path)
@@ -85,9 +86,11 @@ const createStoreProxy = <T>(root: T, notify: Function, path: string[] = [], dep
   )
 }
 
-export const createStore = <Actions, State>() => {
-  type ReadOnlyState = Readonly<State>
+type Init<T, State> = void | T | ((state: State) => Init<T, State>)
+type On<Actions, State> = {[K in keyof Actions]: (fn: (state: State) => Actions[K]) => void}
+type ReadOnlyState<State> = Readonly<State>
 
+export const createStore = <Actions, State>() => {
   interface Mutation {
     path: string
     value: unknown
@@ -107,7 +110,7 @@ export const createStore = <Actions, State>() => {
 
   const notify = <T>(path: string, value: T) => {
     version++
-    mutationObservers.forEach(mutationCallback => {
+    mutationObservers.forEach((mutationCallback) => {
       const mutation = {path, value, state: store}
       mutationCallback(mutation)
     })
@@ -118,8 +121,6 @@ export const createStore = <Actions, State>() => {
   const store = createStoreProxy(root, notify) as State
 
   // ----
-  type Init<T> = void | T | ((state: State) => Init<T>)
-  type On = {[K in keyof Actions]: (fn: (state: State) => Actions[K]) => void}
 
   const noop = () => {}
 
@@ -127,14 +128,14 @@ export const createStore = <Actions, State>() => {
   const actionHandlers: Record<string, Function[]> = Object.create(null)
 
   const on = new Proxy(Function, {
-    get: (target, type: string) => fn => {
+    get: (target, type: string) => (fn) => {
       actionHandlers[type] = actionHandlers[type] || []
       actionHandlers[type].push(fn)
     },
     apply(target, thisArg, argumentsList) {
       //TODO
     },
-  }) as On
+  }) as On<Actions, State>
 
   const $dispatch = (type: string, args: unknown[]) => {
     for (const handler of actionHandlers[type] ?? []) {
@@ -158,19 +159,19 @@ export const createStore = <Actions, State>() => {
       },
   }) as Actions
 
-  const reducer = <T>(init: Init<T>, fn: (on: On) => void = noop): T => {
+  const reducer = <T>(init: Init<T, State>, func: (on: On<Actions, State>) => void = noop): T => {
     if (typeof init !== "function") {
-      fn(on)
+      func(on)
       return init
     }
 
     return init
   }
 
-  const useStore = (): ReadOnlyState => {
+  const useStore = () => {
     const [state, setState] = useState(store)
     useEffect(() => subscribe(() => setState({...store})), [])
-    return state as ReadOnlyState
+    return state as ReadOnlyState<State>
   }
 
   return {
