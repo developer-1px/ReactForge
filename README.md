@@ -8,7 +8,7 @@
 ### 주요 특징
 - 중앙 집권형 개발방식
 - All-in-one
-
+- Proxy 기반
 
 - 타입 안전성 강화: TypeScript를 활용하여 상태 관리 시스템의 안정성과 정확성을 보장합니다.
 - 자동 타입 추론: 복잡한 타입 정의 없이 최대한 자동 추론을 활용하여 개발자의 부담을 줄입니다.
@@ -20,6 +20,12 @@
 > - 강력한 제한, 이렇게 밖에 쓸 수 없는 구조, 방식!
 > - 디버깅, 자동완성, 타입체킹 우선
 > - 그럼에도 외부 모듈 의존도 X
+
+- React를 보니 Pull 방식도 나쁜게 아니더라.
+- Proxy 기반의 업데이트
+- 접근하고 있는 값만 체크하고 이후 업데이트는 해당 값만 추려내서 업데이트 하는 방식으로 re-render 방지
+
+
 
 ## 특징
 
@@ -47,6 +53,8 @@
 - Interface를 먼저 설계하고 개발하는 방식
 - State와 Action을 분리해서 개발하기 쉽게! BDD, SDD
 - 쓸데없은 ActionType, ActionCreator 이런거 NoNo!
+- Proxy 기반으로 쓸데없이 불변성을 지키기 위한 코딩 하지 않는다.
+- 
 
 ```ts
 export interface Todo {
@@ -57,15 +65,14 @@ export interface Todo {
 
 export type VisibilityFilter = "SHOW_ALL"|"SHOW_COMPLETED"|"SHOW_ACTIVE"
 
-interface Query {
-  filteredTodos:Array<Todo>
-}
-
 export interface TodoState {
-  todos:Array<Todo>
-  items:Collection<Todo>
+  Query: {
+    todos:Todo[]
+    filteredTodos:Todo[]
+  }
+  Todo: Record<string, Todo>
+  
   visibilityFilter:VisibilityFilter
-  Query: Query
 }
 
 export interface TodoActions {
@@ -78,72 +85,57 @@ export interface TodoActions {
 ```
 
 ```ts
-import {createStateForge} from "stateForge"
+import {store, reducer} from "./store"
 
-export const {
-  createSlice,
-  createEffect,
-  createStore
-} = createStateForge<TodoState, TodoActions>("store")
-```
-
-
-### Slice
-- 데이터를 기반으로 모듈화
-- State와 Action의 자동완성
-- 외부 라이브러리가 필요없게 내장
-
-```ts
-import {createSlice} from "./index"
-
-export const todos = createSlice(store => store.todos, [], helpers => {
-
-  const {on, value, set, insert, remove, toggle} = helpers
-  
-  on.ADD_TODO((text) => {
+store.Todo = reducer([], on => {
+  on.ADD_TODO(state => (text) => {
     const newTodo = {id: Date.now(), text, completed: false}
-    insert(newTodo)
+    state.Todo[id] = newTodo
   })
 
-  on.TOGGLE_TODO((id) => {
-    toggle(todo => todo.id === id, "completed")
+  on.TOGGLE_TODO(state => (id) => {
+    state.Todo[id].completed = !state.Todo[id].completed
   })
 
-  on.REMOVE_TODO((id) => {
-    remove(todo => todo.id === id)
+  on.REMOVE_TODO(state => (id) => {
+    delete state.Todo[id]
   })
 })
 
-export const visibilityFilter = createSlice(store => store.visibilityFilter, "SHOW_ALL", ({on, set}) => {
-  on.SET_VISIBILITY_FILTER(set)
-})
-```
+store.Query.todos = reducer(state => Object.values(state.Todo))
 
+store.Query.filteredTodos = reducer(state => {
+  const todos = state.Query.todos
+  const visibilityFilter = state.visibilityFilter
 
-
-### Store
-
-- 강력한 중앙집권
-- 찾아가기 쉽게 네비게이션의 역할, 추후 디버깅 용이
-- strict 타입체킹, 빠진 slice가 있으면 타입에러
-
-```ts
-import {todos} from "./todos"
-import {createStore} from "./index"
-import {items, visibilityFilter} from "./etc.ts"
-
-export const store = createStore({
-  todos,
-  items,
-  visibilityFilter,
-  section: {
-    filteredTodos: []
+  if (visibilityFilter === "SHOW_ACTIVE") {
+    return todos.filter(todo => !todo.completed)
   }
+
+  if (visibilityFilter === "SHOW_COMPLETED") {
+    return todos.filter(todo => todo.completed)
+  }
+
+  return todos
+})
+
+store.visibilityFilter = reducer("SHOW_ALL", on => {
+  on.SET_VISIBILITY_FILTER(state => filter => state.visibilityFilter = filter)
 })
 ```
+
+
 
 
 ### Create API
+
+목표
+
+- fetchXXX, getXXX, 보일러 플레이트 없애기
+- d.ts 파일에다가 interface로 등록하면 번들에 포함이 되지 않는다.
+- proxy와 typescript를 통해 자동완성 받을 수 있다.
+- 이 형식을 스웨거를 통해서 자동생성 할 수 있다
+
 
 ```ts
 type Response<T> = createResponse<{
@@ -180,58 +172,24 @@ type API
 
 export const api = createAPI<API>({
   baseURL: "https://uc-api.ep.oror.io/api",
-  fetchOptions: {}
+  fetchOptions: {
+    /* @TODO: 여기 헤더와 보안 작업 추가 되어야 함.*/
+  }
 })
 ```
 
 ### API 사용방법
 
 ```ts
+// GET /posts/recommend
 const res = await api.GET["/posts/recommend"]()
 console.log(res.data.data.list)
 
-// pahh, queryString
+// GET /posts/7yKG9ccNK82?lastKey=100
 const res2 = await api.GET["/posts/:postId"]("7yKG9ccNK82", {lastKey:100})
 console.log(res2)
 
-// path, body, queryString
-const res3 = await api.POST["/calendars/:calendarId"]("!23123", {x:100}, {lastKey:100})
-```
-
-## 생각해보기.. 메모.. 인사이트..
-
----
-
-```ts
-on.ADD_TODO((text) => {
-
-    // @TODO: anti-pattern
-    // 1. 외부 값을 가져오지 못하게 하기
-    const account = state.account
-    const todo = {id:guid(), title:text, userId: account.id} 
-```
-
-
-```ts
-// 리덕스는 리듀서를 순수하게 만들어야 한다!
-
-createSlice(... => {
-// 1. 외부 값이 필요하면 payload에 넣어라.
-  on.ADD_TODO((text, account) => {
-    const todo = {id: guid(), title: text, userId: account.id}
-    //..
-  })
-})
-
-
-// 리덕스는 이렇게 하던데.. 검토해보기...
-const accountMiddleware = createMiddleware( ... => {
-  // 2. account를 매번 넣어주는게 부담스럽다면 미들웨어를 사용하라!
-  on.ADD_TODO(text, (dispatch) => {
-    const account = state.account
-    dispatch.ADD_TODO(text, account)
-  })
-})
-
+// POST /calendars/7yKG9ccNK82?lastKey=100 body:{x:100}
+const res3 = await api.POST["/calendars/:calendarId"]("7yKG9ccNK82", {x:100}, {lastKey:100})
 ```
 
