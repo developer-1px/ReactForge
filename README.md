@@ -181,7 +181,7 @@ type API
   & API_Calendar
 
 export const api = createAPI<API>({
-  baseURL: "https://uc-api.ep.oror.io/api",
+  baseURL: "https://example.com/api",
   fetchOptions: {
     /* @TODO: 여기 헤더와 보안 작업 추가 되어야 함.*/
   }

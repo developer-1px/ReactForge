@@ -132,40 +132,87 @@ const createDraftProxy = <T>(state: T, draft: T = {}): T => {
   }) as T
 }
 
+/*
+function MyType() {}
+
+// 함수로 객체 생성
+function createMyTypeInstance() {
+    const instance = Object.create(MyType.prototype);
+    // 필요한 경우 여기에서 초기화 코드 추가
+    return instance;
+}
+
+const myInstance = createMyTypeInstance();
+console.log(myInstance instanceof MyType); // true
+
+[참고용 코드]
+ */
+
+// @FIXME: 이걸 꼭 클래스로 만들필요가 있었을까??
 class Computed<State, T> {
   public value: T | undefined
   public version = {value: NaN}
   public lastVersion = -1
   public state
+  public _unsubscribe: () => void
 
   constructor(
     public $store: State,
     public $state: State,
     public computedFn: (state: State) => T
   ) {
-    const [state, version, deps] = createStateProxy(this.$store, this.$state, "computed!")
+    const [state, version, deps, unsubscribe] = createStateProxy(this.$store, this.$state, "computed!")
     this.state = state
     this.version = version
     this.value = undefined
+    this._unsubscribe = unsubscribe
 
-    this.deps = deps
+    // @TODO: unsubscribe 언제?? 어떻게?
   }
 
   getValue() {
     if (this.lastVersion !== this.version.value) {
       this.value = this.computedFn(this.state)
       this.lastVersion = this.version.value
-
-      console.log("computed!!! deps", this.deps)
     }
     return this.value
   }
+
+  unsubscribe() {
+    this._unsubscribe()
+  }
 }
 
+type Init<State, T> = ((state: State) => T) | T
+type On<Actions, State> = {[K in keyof Actions]: (fn: (state: State) => Actions[K]) => void}
+type ReducerFn<State, Actions> = (on: On<Actions, State>) => void
+
+// @FIXME: 임시로 interface만 맞춰봄.
+const createStore = <State, Actions>() => {
+  const $store = {} as State
+  const $state = {} as State
+
+  // @FIXME: 임시로 interface만 맞춰봄.
+  const reducer = <T>(init: Init<State, T>, fn?: ReducerFn<State, Actions>) => {
+    return new Computed($store, $state, init) as T
+  }
+
+  const store = createStoreProxy<State>($store, $state)
+
+  expect(store === $store).toBe(false)
+  expect(store.valueOf() === $store).toBe(true)
+
+  const createState = (name: string) => createStateProxy<State>($store, $state, name)
+
+  return {store, reducer, createState, $store, $state}
+}
+
+//-----------------------------------------------------------------------------------------------------
 interface State {
   x: number
   y: number
   sum: number
+  count: number
 
   foo: {
     bar: number
@@ -173,18 +220,18 @@ interface State {
   }
 }
 
+interface Actions {
+  INCREASE(by: number): void
+  DECREASE(by: number): void
+  RESET(): void
+}
+
 describe("proxy", () => {
   it("Store, State, Computed", () => {
-    const $store = {} as State
-    const $state = {} as State
+    const {store, reducer, createState, $store, $state} = createStore<State, Actions>()
 
-    const store = createStoreProxy<State>($store, $state)
-
-    expect(store === $store).toBe(false)
-    expect(store.valueOf() === $store).toBe(true)
-
-    const [state, version, deps] = createStateProxy<State>($store, $state, "root")
-    const [state2, version2, deps2] = createStateProxy<State>($store, $state, "root2")
+    const [state, version, deps] = createState("root")
+    const [state2, version2, deps2] = createState("root2")
 
     // Store는 undefined라도 path를 어떻게든 설정할 수 있다.
     store.foo.bar = 200
@@ -212,10 +259,7 @@ describe("proxy", () => {
 
     // Store에 Computed 함수를 설정할 수 있다.
     // Computed Test
-    store.sum = new Computed($store, $state, (state) => {
-      console.log("computed!!?", state)
-      return state.x + state.y
-    })
+    store.sum = reducer((state) => state.x + state.y)
 
     expect(state.sum).toBe(101)
 
@@ -227,5 +271,11 @@ describe("proxy", () => {
 
     state.x = 50
     expect(state.sum).toBe(51)
+
+    store.count = reducer(0, (on) => {
+      on.INCREASE((state) => (by) => (state.count += by))
+      on.DECREASE((state) => (by) => (state.count += by))
+      on.RESET((state) => () => (state.count = 0))
+    })
   })
 })
