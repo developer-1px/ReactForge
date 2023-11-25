@@ -28,8 +28,10 @@ const createStateProxy = <T>($store: T, $state: T, name?: string): [T, {value: n
   const state = createPathProxy($state, () => {
     const get = (path) => (_, prop) => {
       const storeValue = ReflectGet(getValueFromPath($store, path), prop)
-      if (storeValue instanceof Computed) {
-        return storeValue.getValue()
+      if (storeValue instanceof Reducer) {
+        if (storeValue.computed) {
+          return storeValue.computed.getValue()
+        }
       }
 
       const pathString = makePathString(path, prop)
@@ -101,7 +103,7 @@ const createStoreProxy = <T>($store: T, $state: T): T => {
 
     const set = (path) => (_, prop, value) => {
       const result = SET($store, path, prop, () => value)
-      if (value instanceof Computed) {
+      if (value instanceof Reducer) {
         return result
       }
       SET($state, path, prop, (exist) => (exist === undefined ? value : exist))
@@ -172,7 +174,12 @@ class Computed<State, T> {
 
   getValue() {
     if (this.lastVersion !== this.version.value) {
-      this.value = this.computedFn(this.state)
+      // @FIXME:
+      if (typeof this.computedFn === "function") {
+        this.value = this.computedFn(this.state)
+      } else {
+        this.value = this.computedFn
+      }
       this.lastVersion = this.version.value
     }
     return this.value
@@ -187,6 +194,14 @@ type Init<State, T> = ((state: State) => T) | T
 type On<Actions, State> = {[K in keyof Actions]: (fn: (state: State) => Actions[K]) => void}
 type ReducerFn<State, Actions> = (on: On<Actions, State>) => void
 
+class Reducer<State, T> {
+  constructor(
+    public initValue: T | undefined,
+    public computed: Computed<State, T> | undefined,
+    public reducerFn: Function
+  ) {}
+}
+
 // @FIXME: 임시로 interface만 맞춰봄.
 const createStore = <State, Actions>() => {
   const $store = {} as State
@@ -194,7 +209,9 @@ const createStore = <State, Actions>() => {
 
   // @FIXME: 임시로 interface만 맞춰봄.
   const reducer = <T>(init: Init<State, T>, fn?: ReducerFn<State, Actions>) => {
-    return new Computed($store, $state, init) as T
+    const initValue = typeof init !== "function" ? init : undefined
+    const computed = typeof init === "function" ? new Computed($store, $state, init) : undefined
+    return new Reducer<State, T>(initValue, computed, fn)
   }
 
   const store = createStoreProxy<State>($store, $state)
@@ -204,7 +221,25 @@ const createStore = <State, Actions>() => {
 
   const createState = (name: string) => createStateProxy<State>($store, $state, name)
 
-  return {store, reducer, createState, $store, $state}
+  const dispatch = {
+    INCREASE(by: number) {
+      // @TODO: 이제 어떻게 되어야 하나??
+
+      console.log("store.count.reducerFn", store.count.reducerFn)
+
+      const on = {
+        INCREASE: (fn) => {
+          const [state] = createState("state.count")
+          fn(state)(by)
+        },
+        DECREASE: () => {},
+        RESET: () => {},
+      }
+      store.count.reducerFn(on)
+    },
+  }
+
+  return {store, reducer, createState, $store, $state, dispatch}
 }
 
 //-----------------------------------------------------------------------------------------------------
@@ -227,12 +262,11 @@ interface Actions {
 }
 
 describe("proxy", () => {
+  const {store, reducer, createState, $store, $state, dispatch} = createStore<State, Actions>()
+  const [state, version, deps] = createState("root")
+  const [state2, version2, deps2] = createState("root2")
+
   it("Store, State, Computed", () => {
-    const {store, reducer, createState, $store, $state} = createStore<State, Actions>()
-
-    const [state, version, deps] = createState("root")
-    const [state2, version2, deps2] = createState("root2")
-
     // Store는 undefined라도 path를 어떻게든 설정할 수 있다.
     store.foo.bar = 200
 
@@ -271,11 +305,30 @@ describe("proxy", () => {
 
     state.x = 50
     expect(state.sum).toBe(51)
+  })
+
+  it("reducer Counter", () => {
+    const {store, reducer, createState, $store, $state, dispatch} = createStore<State, Actions>()
+    const [state, version, deps] = createState("root")
 
     store.count = reducer(0, (on) => {
-      on.INCREASE((state) => (by) => (state.count += by))
+      on.INCREASE((state) => (by) => {
+        console.log("INCREASE????", state, by)
+
+        state.count += by
+
+        console.log("State!!!!!!!", state)
+        console.log("State.count!!!!!!!", state.count)
+      })
       on.DECREASE((state) => (by) => (state.count += by))
       on.RESET((state) => () => (state.count = 0))
     })
+
+    state.count = 0
+    dispatch.INCREASE(1)
+    expect(state.count).toBe(1)
+
+    dispatch.INCREASE(5)
+    expect(state.count).toBe(6)
   })
 })
