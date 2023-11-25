@@ -1,4 +1,4 @@
-import {createStore} from "./lib.ts"
+import {createStore} from "../libs/proxy/lib.ts"
 
 interface Actions {
   PUSH_LETTER(key: string): void
@@ -17,9 +17,11 @@ interface Actions {
   SHOW_TOAST(msg: string, duration?: number): void
 }
 
+type KeyType = "pop" | "absent" | "correct" | "present"
+
 interface Key {
   char: string
-  type: "pop" | "absent" | "correct" | "present"
+  type: KeyType
   animation: "flip-in" | "flip-out"
 }
 
@@ -32,9 +34,11 @@ interface States {
 
   allLetters: Array<Array<Key>>
   allLetters_animate: Array<"none" | "shake">
-  numCurrentLine: number
+  currentLineIndex: number
 
   currentLine: Computed<Array<Key>>
+
+  matchedLetters: Record<string, KeyType>
 
   toast: string
 }
@@ -67,9 +71,9 @@ store.currentState = reducer("IDLE", (on) => {
 // const answer = WORDS[Math.floor(Math.random() * WORDS.length)]
 store.answer = "world"
 
-store.numCurrentLine = reducer(0, (on) => {
+store.currentLineIndex = reducer(0, (on) => {
   on.NEXT_STEP((state) => () => {
-    state.numCurrentLine++
+    state.currentLineIndex++
   })
 })
 
@@ -80,7 +84,7 @@ store.allLetters = reducer(
 )
 
 store.currentLine = reducer(
-  (state) => state.allLetters[state.numCurrentLine],
+  (state) => state.allLetters[state.currentLineIndex],
   (on) => {
     const matchWordle = (s_answer: string, s_guess: string) => {
       const answer = s_answer.split("")
@@ -145,7 +149,10 @@ store.currentLine = reducer(
       matched.forEach(({char, type}, i) => {
         setTimeout(async () => {
           state.currentLine[i] = {char, type: "pop", animation: "flip-in"}
-          setTimeout(() => (state.currentLine[i] = {char, type, animation: "flip-out"}), 250)
+          setTimeout(
+            () => (state.currentLine[i] = {char, type, animation: "flip-out"}),
+            250
+          )
         }, 250 * i)
       })
 
@@ -153,10 +160,10 @@ store.currentLine = reducer(
         () => {
           // 매칭된 글자를 저장한다.
           state.currentLine.forEach(({char, type}) => {
-            if (matchedLetters[char] === "correct") {
+            if (state.matchedLetters[char] === "correct") {
               return
             }
-            matchedLetters[char] = type
+            state.matchedLetters[char] = type
           })
 
           // 다음 단계로 이동
@@ -175,20 +182,22 @@ store.currentLine = reducer(
 
 store.allLetters_animate = reducer(Array(NUM_TRY_COUNT).fill("none"), (on) => {
   on.NOT_IN_WORD_LIST((state) => () => {
-    state.allLetters_animate[state.numCurrentLine] = "shake"
+    state.allLetters_animate[state.currentLineIndex] = "shake"
   })
 
   on.NOT_IN_WORD_LIST_ANIMATE_END((state) => () => {
-    state.allLetters_animate[state.numCurrentLine] = "none"
+    state.allLetters_animate[state.currentLineIndex] = "none"
   })
 })
 
+// 토스트 팝업
 store.toast = reducer("", (on) => {
-  // 토스트 팝업
   const TOAST_DURATION = 1500
   const TOAST_DURATION_LONG = 5000
 
-  const delay = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration))
+  const delay = (duration: number) =>
+    new Promise((resolve) => setTimeout(resolve, duration))
+
   const effect = on
 
   on.SHOW_TOAST((state) => async (msg, duration = TOAST_DURATION) => {
@@ -201,64 +210,10 @@ store.toast = reducer("", (on) => {
     dispatch.SHOW_TOAST("Not In word list")
   })
 
-  on.GAME_END((_) => () => {
-    dispatch.SHOW_TOAST("정답은 " + answer + " 입니다.", TOAST_DURATION_LONG)
+  on.GAME_END((state) => () => {
+    dispatch.SHOW_TOAST(
+      "정답은 " + state.answer + " 입니다.",
+      TOAST_DURATION_LONG
+    )
   })
 })
-
-// <div class="vbox h(100%)">
-//
-// <Header/>
-//
-// <!-- Words -->
-// <div class="flex w(320~500) m(auto) pack uppercase">
-// <div class="vbox gap(5)">
-//   {#each allLetters as row, step}
-//   <div class="hbox gap(5) {allLetters_animate[step]}" on:animationend={() => allLetters_animate[step]=''}>
-// {#each Array(5) as _, index}
-// <div class="b(2/--color-tone-4) w(62) h(62) pack font(30) bold
-//   .absent:bg(--color-absent) .absent:c(#fff) .absent:b(none)
-//   .correct:bg(--color-correct) .correct:c(#fff) .correct:b(none)
-//   .present:bg(--color-present) .present:c(#fff) .present:b(none)
-// {row[index]?.animation} .pop:b(2/--color-tone-2)
-// {row[index]?.type}">{row[index]?.char ?? ''}</div>
-// {/each}
-// </div>
-//   {/each}
-//   </div>
-//   </div>
-//
-//   <!-- Keyboard -->
-//   <div class="w(100%) w(320~500) m(auto) grid grid-template-columns(repeat(20,1fr)) p(8) gap(6) uppercase">
-//     {#each KEY1 as key}
-//     <KeyButton class="grid-column(span/2)" on:click={() => pushLetter(key)} type={matchedLetters[key]}>{key}</KeyButton>
-//     {/each}
-//
-//     <div class="grid-column(span/1)"/>
-//       {#each KEY2 as key}
-//       <KeyButton class="grid-column(span/2)" on:click={() => pushLetter(key)} type={matchedLetters[key]}>{key}</KeyButton>
-//       {/each}
-//       <div class="grid-column(span/1)"/>
-//
-//       <KeyButton class="grid-column(span/3)" tabindex="-1">ENTER</KeyButton>
-//         {#each KEY3 as key}
-//         <KeyButton class="grid-column(span/2)" on:click={() => pushLetter(key)} type={matchedLetters[key]}>{key}</KeyButton>
-//         {/each}
-//         <KeyButton class="grid-column(span/3)" tabindex="-1" on:click={backspace}>
-//         <svg xmlns="http://www.w3.org/2000/svg" height="24" viewBox="0 0 24 24" width="24">
-//         <path fill="var(--color-tone-1)" d="M22 3H7c-.69 0-1.23.35-1.59.88L0 12l5.41 8.11c.36.53.9.89 1.59.89h15c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm0 16H7.07L2.4 12l4.66-7H22v14zm-11.59-2L14 13.41 17.59 17 19 15.59 15.41 12 19 8.41 17.59 7 14 10.59 10.41 7 9 8.41 12.59 12 9 15.59z"></path>
-//           </svg>
-//           </KeyButton>
-//           </div>
-//
-//           {#if toast}
-//           <div transition:fade={250} class="bg(#000) r(8) c(#fff) bold p(8/12) absolute top(10%) left(50%) translateX(-50%)">{toast}</div>
-//           {/if}
-//           </div>
-//
-//           <svelte:head>
-//           <title>테오의 프론트엔드 - Wordle Challenge</title>
-//           </svelte:head>
-//
-//           <svelte:window on:keydown={onkeydown}/>
-//

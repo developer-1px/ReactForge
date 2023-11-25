@@ -1,56 +1,53 @@
 import "./App.css"
-import {dispatch, reducer, store, subscribe, useStore} from "./libs/proxy/newStore.ts"
-import {useEffect} from "react"
+import {
+  dispatch,
+  reducer,
+  store,
+  subscribe,
+  useStore,
+} from "./libs/proxy/newStore.ts"
 
-store.count = reducer(0, on => {
-  on.INCREASE(state => by => (state.count += by))
-
-  on.DECREASE(state => by => (state.count -= by))
-
-  on.RESET(state => () => (state.count = 0))
-})
-
-const createCounter = () =>
-  reducer(0, on => {
-    on.INCREASE(set => by => set(count => count + by))
-
-    on.DECREASE(set => by => set(count => count + by))
-
-    on.RESET(set => () => set(0))
+store.count = reducer(0, (on) => {
+  on.INCREASE((state) => (by) => {
+    state.count += 1
   })
 
-store.count = createCounter()
-store.count2 = createCounter()
+  on.DECREASE((state) => (by) => (state.count -= by))
 
-store.count2 = reducer(0, on => {
-  on.INCREASE(state => by => (state.count2 += by))
-
-  on.DECREASE(state => by => (state.count2 -= by))
-
-  on.RESET(state => () => (state.count2 = 0))
+  on.RESET((state) => () => (state.count = 0))
 })
+
+store.count2 = reducer(20, (on) => {
+  on.INCREASE2((state) => (by) => (state.count2 += by))
+
+  on.DECREASE2((state) => (by) => (state.count2 -= by))
+
+  on.RESET2((state) => () => (state.count2 = 0))
+})
+
+store.sum = reducer((state) => state.count + state.count2)
 
 store.timer = 0
 
-subscribe(() => {
-  console.warn("root!!!! subscrrive")
+subscribe((...args) => {
+  console.log(args)
 })
 
 function Counter2() {
   console.log("Counter2: re-render")
 
-  const state = useStore()
+  const count2 = useStore((state) => state.count2)
   const count2 = state.count2
 
-  const 증가 = () => dispatch.INCREASE(5)
+  const 증가 = () => dispatch.INCREASE2(1)
 
-  const 감소 = () => dispatch.DECREASE(5)
+  const 감소 = () => dispatch.DECREASE2(5)
 
-  const 초기화 = () => dispatch.RESET()
+  const 초기화 = () => dispatch.RESET2()
 
   return (
     <>
-      <div className="card">
+      <div className="card sddd">
         <button onClick={증가}>count is {count2}</button>
         <button onClick={증가}>+</button>
         <button onClick={감소}>-</button>
@@ -65,10 +62,11 @@ function Counter() {
 
   const state = useStore()
   const count = state.count
+  const sum = state.sum
 
-  const 증가 = () => dispatch.INCREASE(5)
+  const 증가 = () => dispatch.INCREASE(1)
 
-  const 감소 = () => dispatch.DECREASE(5)
+  const 감소 = () => dispatch.DECREASE(1)
 
   const 초기화 = () => dispatch.RESET()
 
@@ -76,6 +74,7 @@ function Counter() {
     <>
       <div className="card">
         <button onClick={증가}>count is {count}</button>
+        <button onClick={증가}>sum is {sum}</button>
         <button onClick={증가}>+</button>
         <button onClick={감소}>-</button>
         <button onClick={초기화}>RESET</button>
@@ -91,7 +90,7 @@ function App() {
     <>
       {/*<Timer />*/}
       <Counter />
-      {/*<Counter2 />*/}
+      <Counter2 />
     </>
   )
 }

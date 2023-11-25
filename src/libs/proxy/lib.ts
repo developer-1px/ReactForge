@@ -1,4 +1,4 @@
-import {useEffect, useState} from "react"
+import {useEffect, useMemo, useState, useSyncExternalStore} from "react"
 
 type Readonly<T> = {
   readonly [K in keyof T]: Readonly<T[K]>
@@ -8,8 +8,7 @@ const PathSymbol = Symbol("path")
 const DepSymbol = Symbol("dep")
 
 const getValue = (root: unknown, path: string[]) => {
-  const obj = path.reduce((acc, prop) => acc && acc[prop], root)
-  return obj ? obj.valueOf() : obj
+  return path.reduce((acc, prop) => acc && acc[prop], root)
 }
 
 const handleProxy = <T>(getValue, override: ProxyHandler<T>) => {
@@ -24,10 +23,106 @@ const handleProxy = <T>(getValue, override: ProxyHandler<T>) => {
   )
 }
 
-const createStoreProxy = <T>(root: T, notify: Function, path: string[] = [], deps = new Set()): T => {
+const createPathProxy = (root: unknown) => {
+  const dirtySet = Set<string>
+  const deps = new Set()
+
+  const getter = (path) => (_, prop, receiver) => {
+    if (prop === PathSymbol) {
+      return path.join(".")
+    }
+    if (prop === DepSymbol) {
+      return deps
+    }
+
+    const get = () => getValue(root, path)
+    if (prop === "valueOf") {
+      return get
+    }
+
+    // const pathString = [...path, prop].join(".")
+    // deps.add(pathString)
+    //
+    // const reducer = store[prop] //getValueFromPath(store, path)
+    //
+    // console.log(">>>>>>>>>>>>>>>>>>>>>", pathString, reducer)
+    //
+    // if (reducer instanceof Reducer && reducer.computed) {
+    //   const tracked = new Set()
+    //   const forkState = createStateProxy(store, root, dirtySet, path, tracked)
+    //   const result = reducer.computed(forkState)
+    //   console.log("tracked", tracked)
+    //   return result
+    // }
+
+    const current = get()
+
+    // if (current === undefined || current === null) {
+    //   return current
+    // }
+
+    let next = Reflect.get(current, prop, receiver)
+
+    // if (typeof next === "function") {
+    //   return next()
+    // }
+
+    return next
+  }
+
+  const setter = (path) => (_, prop, value, reciver) => {
+    // const get = () => getValueFromPath(root, path)
+    //
+    // const fullPath = [...path, prop]
+    // fullPath.forEach((_, i, A) => {
+    //   const pathString = A.slice(0, i + 1).join(".")
+    //   dirtySet.add(pathString)
+    // })
+    //
+    // const current = get()
+    // current[prop] = value.valueOf()
+
+    // notify(fullPath.join("."), value, root)
+    // console.log("state." + fullPath.join("."), value)
+
+    return true
+  }
+
+  const createPathProxySub = (target: unknown, path: string[] = []) => {
+    const get = () => getValue(root, path)
+
+    const state = new Proxy(
+      target,
+      handleProxy(get, {
+        get(target, prop, reciver) {
+          const result = getter(path)(target, prop, reciver)
+          return result && typeof result === "object"
+            ? createPathProxySub([...path, prop.toString()])
+            : result
+        },
+
+        set(...args) {
+          return setter(path)(...args)
+        },
+      })
+    )
+
+    return state
+  }
+
+  return createPathProxySub(root)
+}
+
+const createStateProxy = <T>(
+  store,
+  root: T,
+  dirtySet: Set<string>,
+  path: string[] = [],
+  deps = new Set()
+): T => {
   const get = () => getValue(root, path)
 
-  return new Proxy(
+  const state = new Proxy(
     get(),
     handleProxy(get, {
       get(_, prop: string | symbol, receiver) {
@@ -37,12 +132,30 @@ const createStoreProxy = <T>(root: T, notify: Function, path: string[] = [], dep
         if (prop === DepSymbol) {
           return deps
         }
-        if (prop === "valueOf" || prop === "toString") {
+        if (prop === "valueOf") {
           return get
         }
 
         const pathString = [...path, prop].join(".")
         deps.add(pathString)
+
+        const reducer = store[prop] //getValueFromPath(store, path)
+
+        console.log(">>>>>>>>>>>>>>>>>>>>>", pathString, reducer)
+
+        if (reducer instanceof Reducer && reducer.computed) {
+          const tracked = new Set()
+          const forkState = createStateProxy(
+            store,
+            root,
+            dirtySet,
+            path,
+            tracked
+          )
+          const result = reducer.computed(forkState)
+          console.log("tracked", tracked)
+          return result
+        }
 
         const current = get()
 
@@ -50,7 +163,8 @@ const createStoreProxy = <T>(root: T, notify: Function, path: string[] = [], dep
           return current
         }
 
-        const next = Reflect.get(current, prop, receiver)
+        let next = Reflect.get(current, prop, receiver)
+
         if (typeof next === "function") {
           return next()
         }
@@ -59,36 +173,62 @@ const createStoreProxy = <T>(root: T, notify: Function, path: string[] = [], dep
           return next
         }
 
-        return createStoreProxy(root, notify, [...path, prop.toString()], deps)
+        return createStateProxy(
+          store,
+          root,
+          dirtySet,
+          [...path, prop.toString()],
+          deps
+        )
       },
 
       set(_, prop, value) {
         const fullPath = [...path, prop]
         fullPath.forEach((_, i, A) => {
-          const pathString = A.slice(0, i).join(".")
-          if (!pathString) return
-          console.log("set pathString", pathString)
-          if (deps.has(pathString)) {
-            console.log("notify!!!!!!!", pathString)
-            notify(pathString, value, root)
-          }
+          const pathString = A.slice(0, i + 1).join(".")
+          dirtySet.add(pathString)
         })
 
         const current = get()
         current[prop] = value.valueOf()
 
-        notify(fullPath.join("."), value, root)
-        console.log("state." + fullPath.join("."), value)
+        // notify(fullPath.join("."), value, root)
+        // console.log("state." + fullPath.join("."), value)
 
         return true
       },
     })
   )
+
+  return state
+}
+
+const createStoreProxy = (store, root) => {
+  return new Proxy(store, {
+    set(target, prop, value, receiver): boolean {
+      //
+      if (value instanceof Reducer) {
+        root[prop] = value.initValue
+      }
+
+      store[prop] = value
+      return true
+    },
+  })
 }
 
 type Init<T, State> = void | T | ((state: State) => Init<T, State>)
-type On<Actions, State> = {[K in keyof Actions]: (fn: (state: State) => Actions[K]) => void}
-type ReadOnlyState<State> = Readonly<State>
+type On<Actions, State> = {
+  [K in keyof Actions]: (fn: (state: State) => Actions[K]) => void
+}
+
+class Reducer<T, State> {
+  constructor(
+    public initValue: T | undefined,
+    public computed: (state: State) => T | undefined,
+    public func: Function
+  ) {}
+}
 
 export const createStore = <Actions, State>() => {
   interface Mutation {
@@ -108,70 +248,118 @@ export const createStore = <Actions, State>() => {
     return () => void mutationObservers.delete(fn)
   }
 
-  const notify = <T>(path: string, value: T) => {
+  const dirtySet = new Set()
+
+  const notify = (dirtySet: Set<string>) => {
     version++
     mutationObservers.forEach((mutationCallback) => {
-      const mutation = {path, value, state: store}
-      mutationCallback(mutation)
+      // console.warn()
+
+      const invalidedStates = Array.from(forkStates).filter((state) => {
+        const deps = state[DepSymbol]
+        for (const item of deps) {
+          dirtySet.has(item)
+          return true
+        }
+        return false
+      })
+
+      console.warn({invalidedStates})
+
+      mutationCallback(new Set(invalidedStates))
     })
   }
 
-  const root = {}
+  const originalStore = {}
+  const root = {} as State
 
-  const store = createStoreProxy(root, notify) as State
+  const forkStates = new Set()
+
+  const forkState = () => {
+    const state = createStateProxy(originalStore, root, dirtySet) as State
+    forkStates.add(state)
+    return state
+  }
+
+  const state = forkState()
+
+  const store = createStoreProxy(originalStore, root, state) as State
+
+  let snapshot = state
 
   // ----
 
   const noop = () => {}
 
-  // actionHandlers
-  const actionHandlers: Record<string, Function[]> = Object.create(null)
-
-  const on = new Proxy(Function, {
-    get: (target, type: string) => (fn) => {
-      actionHandlers[type] = actionHandlers[type] || []
-      actionHandlers[type].push(fn)
-    },
-    apply(target, thisArg, argumentsList) {
-      //TODO
-    },
-  }) as On<Actions, State>
-
   const $dispatch = (type: string, args: unknown[]) => {
-    for (const handler of actionHandlers[type] ?? []) {
-      handler(store)(...args)
+    const on = new Proxy(Function, {
+      get: (_, handlerType: string) => (fn: Function) => {
+        if (handlerType === type) {
+          // @TODO: state에 뭔가를 추적을 할 수 있는 것들을 넣으면 좋겠는데...
+          fn(state)(...args)
+        }
+      },
+      apply(_, thisArg, argumentsList) {
+        //TODO
+      },
+    }) as On<Actions, State>
+
+    // @TODO: store키 직렬화 필요. ex) store.Query.todos = store["Query.todos"]
+    for (const key in store) {
+      // @TODO: key를 통해서 action과 state 변화 추적 로그도 만들어야 함!
+
+      const reducer = store[key]
+      if (reducer instanceof Reducer) {
+        reducer.func(on)
+      }
     }
   }
-
-  // const $middleware = middleware(store)($dispatch)
 
   const dispatch = new Proxy(Function, {
     get:
       (_, type: string) =>
       (...payload: unknown[]) => {
+        //
+        dirtySet.clear()
+
         console.group(type + "(", ...payload, ")")
         console.groupCollapsed("(callstack)")
         console.trace("")
         console.groupEnd()
         $dispatch(type, payload)
-        window.state = store.valueOf()
         console.groupEnd()
+
+        snapshot = createStateProxy(originalStore, root, dirtySet)
+        window.state = snapshot
+
+        console.warn({dirtySet})
+
+        notify(dirtySet)
       },
   }) as Actions
 
-  const reducer = <T>(init: Init<T, State>, func: (on: On<Actions, State>) => void = noop): T => {
-    if (typeof init !== "function") {
-      func(on)
-      return init
-    }
+  const reducer = <T>(
+    init: Init<T, State>,
+    func: (on: On<Actions, State>) => void = noop
+  ): T => {
+    let initValue = undefined
+    let computed = undefined
 
-    return init
+    if (typeof init === "function") {
+      computed = init
+    } else {
+      initValue = init
+    }
+    return new Reducer<T, State>(initValue, computed, func) as T
   }
 
   const useStore = () => {
-    const [state, setState] = useState(store)
-    useEffect(() => subscribe(() => setState({...store})), [])
-    return state as ReadOnlyState<State>
+    const newState = useMemo(() => forkState(), [])
+    const [_state, setState] = useState(newState)
+    useEffect(() => {
+      return subscribe(() => {})
+    }, [])
+    return _state
   }
 
   return {
