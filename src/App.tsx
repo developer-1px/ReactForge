@@ -1,11 +1,5 @@
 import "./App.css"
-import {
-  dispatch,
-  reducer,
-  store,
-  subscribe,
-  useStore,
-} from "./libs/proxy/newStore.ts"
+import {dispatch, reducer, store, subscribe, useStore} from "./deprecated/proxy/newStore.ts"
 
 store.count = reducer(0, (on) => {
   on.INCREASE((state) => (by) => {

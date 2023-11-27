@@ -1,112 +1,66 @@
 import {describe, expect, it, vi} from "vitest"
 import {createPathProxy, getValueFromPath, ReflectGet, ReflectSet} from "./createPathProxy.ts"
 
-const isObject = (obj) => Object(obj) === obj
+const isObject = (obj: unknown) => Object(obj) === obj
 
-const isPrimitive = (value) => Object(value) !== value
+const isPrimitive = (value: unknown) => Object(value) !== value
 
 const valueOf = <T>(value: T) => (typeof value?.valueOf === "function" ? value.valueOf() : value)
 
-const makePathString = (path, prop) => [...path, prop].join(".")
+const makePathString = (path: string[], prop: string) => [...path, prop].join(".")
 
-// @FIXME: temp
-const stateMutations = new Set()
-
-const subscribeStateMutation = (callback) => {
-  stateMutations.add(callback)
-  return () => stateMutations.delete(callback)
-}
-
-const publishStateMutation = (...args) => {
-  stateMutations.forEach((callback) => callback(...args))
-}
-
-const createStateProxy = <T>($store: T, $state: T, name?: string): [T, {value: number}, Set<any>] => {
-  const deps = new Set()
-  const version = {value: 0}
-
-  const state = createPathProxy($state, () => {
-    const get = (path) => (_, prop) => {
-      const storeValue = ReflectGet(getValueFromPath($store, path), prop)
-      if (storeValue instanceof Reducer) {
-        if (storeValue.computed) {
-          return storeValue.computed.getValue()
-        }
-      }
-
-      const pathString = makePathString(path, prop)
-      deps.add(pathString)
-      console.log(name, ">>>> deps", pathString)
-
-      let value = ReflectGet(getValueFromPath($state, path), prop)
-
-      // @TODO
-
-      return value
-    }
-
-    const set = (path) => (_, prop, value) => {
-      // value = valueOf(value)
-
-      // @TODO: 값이 달라지지 않았다면 return true
-
-      // 그리고 한번에 Sync!
-
-      // 변경사항 전파 draft에 먼저 값을 쓴다.
-
-      const current = getValueFromPath($state, path)
-      if (ReflectSet(current, prop, value)) {
-        publishStateMutation($state, path, prop, value)
-        return true
-      }
-
-      return false
-    }
-
-    return {get, set}
-  }) as T
-
-  const unsubscribe = subscribeStateMutation((target, path, prop) => {
-    // if ($state !== $state) {
-    //   return
-    // }
-
-    // version up!
-    const pathString = makePathString(path, prop)
-    if (deps.has(pathString)) {
-      version.value++
-      console.log(name, "version up!", version.value, pathString)
-    }
-  })
-
-  return [state, version, deps, unsubscribe]
-}
-
-const createStoreProxy = <T>($store: T, $state: T): T => {
-  const SET = (target, path, prop, valueFn) => {
-    path.forEach((p) => {
-      let next = ReflectGet(target, p)
-      if (!next) {
-        next = {}
-        ReflectSet(target, p, next)
-      }
-      target = next
-    })
-    return ReflectSet(target, prop, valueFn(ReflectGet(target, prop)))
+const traverseObject = <T extends object>(obj: T, callback: (path: string[], prop: string, value: any) => void, path: string[] = []) => {
+  if (!isObject(obj)) {
+    return
   }
 
-  const store = createPathProxy($store, () => {
-    const get = (path) => (_, prop) => {
-      const current = getValueFromPath($store, path)
-      return ReflectGet(current, prop) ?? {}
+  Object.entries(obj).forEach(([key, value]) => {
+    const currentPath = [...path, key]
+    callback(path, key, value)
+    if (isObject(value)) {
+      traverseObject(value, callback, currentPath)
     }
+  })
+}
+
+const safeReflectGet = <T>(target: object, path: string[], prop: string): T | undefined => {
+  const current = getValueFromPath(target, path)
+  return ReflectGet(current, prop)
+}
+
+const safeReflectSet = (target: object, path: string[], prop: string, valueFn: (exist: unknown) => unknown) => {
+  path.forEach((p) => {
+    let next = ReflectGet(target, p)
+    if (!next) {
+      next = {}
+      ReflectSet(target, p, next)
+    }
+    target = next
+  })
+  return ReflectSet(target, prop, valueFn(ReflectGet(target, prop)))
+}
+
+//
+//
+// --- StoreProxy
+
+const createStoreProxy = <T extends object>($store: T, $state: T): T => {
+  const store = createPathProxy($store, () => {
+    const get = (path) => (_, prop) => safeReflectGet($store, path, prop) ?? {}
 
     const set = (path) => (_, prop, value) => {
-      const result = SET($store, path, prop, () => value)
+      const result = safeReflectSet($store, path, prop, () => value)
+
+      // @TODO: @fixme!! 리듀서에게 위임하기?
       if (value instanceof Reducer) {
-        return result
+        if (value.computed) {
+          return result
+        }
+        value = value.initValue
       }
-      SET($state, path, prop, (exist) => (exist === undefined ? value : exist))
+
+      // @TODO: 아래 코드 설명 필요!
+      safeReflectSet($state, path, prop, (exist) => (exist === undefined ? value : exist))
       return result
     }
 
@@ -116,138 +70,280 @@ const createStoreProxy = <T>($store: T, $state: T): T => {
   return store
 }
 
-const createDraftProxy = <T>(state: T, draft: T = {}): T => {
-  return createPathProxy(draft, () => {
-    const get = (path) => (_, prop, receiver) => {
-      const value = ReflectGet(getValueFromPath(draft, path), prop, receiver)
-      if (value === undefined) {
-        return ReflectGet(getValueFromPath(state, path), prop, receiver)
+const getComputedValueFromStore = ($store: object, path: string[], prop: string) => {
+  const storeValue = safeReflectGet($store, path, prop)
+  if (storeValue instanceof Reducer) {
+    if (storeValue.computed) {
+      return [true, storeValue.computed.getValue()] as const
+    }
+  }
+  return [false, undefined] as const
+}
+
+//
+//
+/// --- StateProxy
+
+type SubscribeCallback = (...args: unknown[]) => void
+const stateMutations = new Set<SubscribeCallback>()
+
+const subscribeStateMutation = (callback: SubscribeCallback) => {
+  stateMutations.add(callback)
+  return () => stateMutations.delete(callback)
+}
+
+const publishStateMutation = (...args: unknown[]) => {
+  stateMutations.forEach((callback) => callback(...args))
+}
+
+const createStateProxy = <T extends object>($store: T, $state: T, name: string = "") => {
+  const deps = new Set<string>()
+  const version = {value: 0}
+
+  const state = createPathProxy($state, () => {
+    const get = (path: string[]) => (_, prop) => {
+      const [hasStoreValue, storeValue] = getComputedValueFromStore($store, path, prop)
+      if (hasStoreValue) {
+        return storeValue
       }
+
+      // 변화추적을 위해 사용되고 있는 path 기록
+      const pathString = makePathString(path, prop)
+      deps.add(pathString)
+
+      //
+      const value = safeReflectGet($state, path, prop)
+
+      // @TODO: Array라면???
+
+      // push, pop,
+
       return value
     }
 
-    const set = (path) => (_, prop, value, receiver) => {
-      return ReflectSet(getValueFromPath(draft, path), prop, valueOf(value), receiver)
+    const set = (path: string[]) => (_, prop, value) => {
+      const current = getValueFromPath($state, path)
+      const existValue = ReflectGet(current, prop)
+
+      // 값은 값이라면 업데이트 하지 않는다.
+      if (existValue === value) {
+        return true
+      }
+
+      if (ReflectSet(current, prop, value)) {
+        publishStateMutation($state, path, prop, value, existValue)
+        return true
+      }
+      return false
     }
 
     return {get, set}
   }) as T
-}
 
-/*
-function MyType() {}
-
-// 함수로 객체 생성
-function createMyTypeInstance() {
-    const instance = Object.create(MyType.prototype);
-    // 필요한 경우 여기에서 초기화 코드 추가
-    return instance;
-}
-
-const myInstance = createMyTypeInstance();
-console.log(myInstance instanceof MyType); // true
-
-[참고용 코드]
- */
-
-// @FIXME: 이걸 꼭 클래스로 만들필요가 있었을까??
-class Computed<State, T> {
-  public value: T | undefined
-  public version = {value: NaN}
-  public lastVersion = -1
-  public state
-  public _unsubscribe: () => void
-
-  constructor(
-    public $store: State,
-    public $state: State,
-    public computedFn: (state: State) => T
-  ) {
-    const [state, version, deps, unsubscribe] = createStateProxy(this.$store, this.$state, "computed!")
-    this.state = state
-    this.version = version
-    this.value = undefined
-    this._unsubscribe = unsubscribe
-
-    // @TODO: unsubscribe 언제?? 어떻게?
-  }
-
-  getValue() {
-    if (this.lastVersion !== this.version.value) {
-      // @FIXME:
-      if (typeof this.computedFn === "function") {
-        this.value = this.computedFn(this.state)
-      } else {
-        this.value = this.computedFn
-      }
-      this.lastVersion = this.version.value
+  const unsubscribe = subscribeStateMutation((target, path, prop, value) => {
+    if ($state !== target) {
+      return
     }
-    return this.value
-  }
 
-  unsubscribe() {
-    this._unsubscribe()
-  }
+    // version up!
+    const pathString = makePathString(path, prop)
+    if (deps.has(pathString)) {
+      version.value++
+      console.log(`[state:${name}] v${version.value}`, pathString, "→", value)
+    }
+  })
+
+  return [state, unsubscribe, version, deps] as const
 }
 
+const createDraftProxy = <T>($store: T, $state: T) => {
+  let $draft_store: T = {} as T
+
+  let $draft_read: T = {} as T
+  let $draft: T = {} as T
+
+  const draft = createPathProxy($draft, () => {
+    const get = (path) => (_, prop) => {
+      //
+      // @FIXME
+      const [hasStoreValue, storeValue] = getComputedValueFromStore($draft_store, path, prop)
+      if (hasStoreValue) {
+        return storeValue
+      }
+
+      const reducer = safeReflectGet($store, path, prop)
+      if (reducer) {
+        const newReducer = reducer.clone($draft_store)
+        safeReflectSet($draft_store, path, prop, () => newReducer)
+        return getComputedValueFromStore($draft_store, path, prop)[1]
+      }
+
+      //
+      let value = safeReflectGet($draft, path, prop)
+      value = value === undefined ? safeReflectGet($draft_read, path, prop) : value
+      if (value === undefined) {
+        value = safeReflectGet($state, path, prop)
+        if (Array.isArray(value)) value = [...value]
+        else if (isObject(value)) value = {...value}
+      }
+      return value
+    }
+
+    const set = (path) => (_, prop, value) => safeReflectSet($draft, path, prop, () => valueOf(value))
+
+    return {get, set}
+  }) as T
+
+  // 불변성을 유지하기 위해서 새로운 값이 바뀌면 draft는 이전 값을 유지한다.
+  const unsubscribe = subscribeStateMutation((target, path, prop, _, existValue) => {
+    if ($state !== target) {
+      return
+    }
+
+    const draftValue = safeReflectGet($draft, path, prop)
+    if (draftValue === undefined) {
+      ReflectSet(getValueFromPath($draft_read, path), prop, valueOf(existValue))
+    }
+  })
+
+  const commit = () => {
+    const [state, unsubscribe] = createStateProxy($store, $state, "commit")
+
+    traverseObject($draft, (path, prop, value) => {
+      if (isPrimitive(value)) {
+        safeReflectSet(state, path, prop, () => value)
+      }
+    })
+
+    $draft_read = {} as T
+    $draft = {} as T
+    unsubscribe()
+  }
+
+  return {draft, commit, unsubscribe}
+}
+
+// Computed
+type Computed<T> = {
+  getValue: () => T | undefined
+  unsubscribe: () => void
+}
+
+const createComputed = <State, T>($store: State, $state: State, computedFn: (state: State) => T): Computed<T> => {
+  let value: T | undefined = undefined
+  let lastVersion = -1
+
+  const [state, unsubscribe, version] = createStateProxy($store, $state, "computed")
+
+  const getValue = (): T | undefined => {
+    if (lastVersion !== version.value) {
+      value = computedFn(state)
+      lastVersion = version.value
+    }
+    return value
+  }
+
+  return {getValue, unsubscribe}
+}
+
+// Reducer
 type Init<State, T> = ((state: State) => T) | T
 type On<Actions, State> = {[K in keyof Actions]: (fn: (state: State) => Actions[K]) => void}
 type ReducerFn<State, Actions> = (on: On<Actions, State>) => void
 
-class Reducer<State, T> {
+class Reducer<State, Actions, T> {
+  public initValue: T | undefined
+  public computed: Computed<T> | undefined
+
   constructor(
-    public initValue: T | undefined,
-    public computed: Computed<State, T> | undefined,
-    public reducerFn: Function
-  ) {}
+    public init: Init<State, T>,
+    public reducerFn: ReducerFn<State, Actions>,
+    public $store: State,
+    public $state: State
+  ) {
+    this.initValue = typeof init !== "function" ? init : undefined
+    this.computed = typeof init === "function" ? createComputed($store, $state, init) : undefined
+  }
+
+  clone($store: State) {
+    return new Reducer<State, Actions, T>(this.init, this.reducerFn, $store, this.$state)
+  }
 }
 
 // @FIXME: 임시로 interface만 맞춰봄.
-const createStore = <State, Actions>() => {
+export const createStore = <State, Actions>() => {
   const $store = {} as State
   const $state = {} as State
 
-  // @FIXME: 임시로 interface만 맞춰봄.
-  const reducer = <T>(init: Init<State, T>, fn?: ReducerFn<State, Actions>) => {
-    const initValue = typeof init !== "function" ? init : undefined
-    const computed = typeof init === "function" ? new Computed($store, $state, init) : undefined
-    return new Reducer<State, T>(initValue, computed, fn)
-  }
+  const noop = () => {}
 
   const store = createStoreProxy<State>($store, $state)
 
-  expect(store === $store).toBe(false)
-  expect(store.valueOf() === $store).toBe(true)
+  const reducer = <T>(init: Init<State, T>, fn: ReducerFn<State, Actions> = noop) => {
+    return new Reducer(init, fn, $store, $state)
+  }
 
   const createState = (name: string) => createStateProxy<State>($store, $state, name)
 
-  const dispatch = {
-    INCREASE(by: number) {
-      // @TODO: 이제 어떻게 되어야 하나??
+  // createDispatch
+  const $dispatch = (type: string, args: unknown[]) => {
+    const {draft, commit, unsubscribe} = createDraftProxy($store, $state)
 
-      console.log("store.count.reducerFn", store.count.reducerFn)
+    const on = new Proxy(Function, {
+      get: (_, handlerType: string) => (fn: Function) => {
+        if (handlerType === type) {
+          // @TODO: state에 뭔가를 추적을 할 수 있는 것들을 넣으면 좋겠는데...
+          const result = fn(draft)(...args)
 
-      const on = {
-        INCREASE: (fn) => {
-          const [state] = createState("state.count")
-          fn(state)(by)
-        },
-        DECREASE: () => {},
-        RESET: () => {},
+          // @TODO: reuslt 비동기처리
+        }
+      },
+      apply(_, thisArg, argumentsList) {
+        //TODO
+      },
+    }) as On<Actions, State>
+
+    // reduce 실행
+    traverseObject(store, (path, prop, value) => {
+      const reducer = value
+      if (reducer instanceof Reducer) {
+        reducer.reducerFn(on)
       }
-      store.count.reducerFn(on)
-    },
+    })
+
+    commit()
+    unsubscribe()
   }
 
-  return {store, reducer, createState, $store, $state, dispatch}
+  const dispatch = new Proxy(Function, {
+    get:
+      (_, type: string) =>
+      (...payload: unknown[]) => {
+        // console.group(type + "(", ...payload, ")")
+        // console.groupCollapsed("(callstack)")
+        // console.trace("")
+        // console.groupEnd()
+        console.log("[dispatch]", type, ...payload)
+        $dispatch(type, payload)
+        // console.groupEnd()
+
+        // snapshot = createStateProxy(originalStore, root, dirtySet)
+        // window.state = snapshot
+      },
+  }) as Actions
+
+  return {store, reducer, createState, dispatch, $store, $state}
 }
 
 //-----------------------------------------------------------------------------------------------------
 interface State {
   x: number
   y: number
+  z: number
   sum: number
+
   count: number
+  doubledCount: number
 
   foo: {
     bar: number
@@ -262,9 +358,9 @@ interface Actions {
 }
 
 describe("proxy", () => {
-  const {store, reducer, createState, $store, $state, dispatch} = createStore<State, Actions>()
-  const [state, version, deps] = createState("root")
-  const [state2, version2, deps2] = createState("root2")
+  const {store, reducer, createState, $store, $state} = createStore<State, Actions>()
+  const [state] = createState("root")
+  const [state2] = createState("root2")
 
   it("Store, State, Computed", () => {
     // Store는 undefined라도 path를 어떻게든 설정할 수 있다.
@@ -307,28 +403,69 @@ describe("proxy", () => {
     expect(state.sum).toBe(51)
   })
 
-  it("reducer Counter", () => {
-    const {store, reducer, createState, $store, $state, dispatch} = createStore<State, Actions>()
-    const [state, version, deps] = createState("root")
+  it("Draft Test", () => {
+    const {store, reducer, createState, $store, $state} = createStore<State, Actions>()
 
-    store.count = reducer(0, (on) => {
-      on.INCREASE((state) => (by) => {
-        console.log("INCREASE????", state, by)
+    const [state] = createState("state1")
 
-        state.count += by
+    store.sum = reducer((state) => state.x + state.y)
 
-        console.log("State!!!!!!!", state)
-        console.log("State.count!!!!!!!", state.count)
-      })
-      on.DECREASE((state) => (by) => (state.count += by))
-      on.RESET((state) => () => (state.count = 0))
-    })
+    state.x = 100
+    state.y = 200
+    state.foo = {bar: 300, baz: 400}
 
-    state.count = 0
-    dispatch.INCREASE(1)
-    expect(state.count).toBe(1)
+    expect(state.x).toBe(100)
+    expect(state.y).toBe(200)
+    expect(state.sum).toBe(300)
+    expect(state.foo.bar).toBe(300)
 
-    dispatch.INCREASE(5)
-    expect(state.count).toBe(6)
+    // Draft는 생성 당시 state의 값을 그대로 출력한다.
+    const {draft, commit} = createDraftProxy($store, $state)
+    const {draft: draft2, commit: commit2} = createDraftProxy($store, $state)
+
+    expect(draft.x).toBe(100)
+    expect(draft.y).toBe(200)
+    expect(draft.foo.bar).toBe(300)
+
+    expect(draft2.x).toBe(100)
+    expect(draft2.y).toBe(200)
+    expect(draft2.foo.bar).toBe(300)
+
+    // Draft의 값을 변경하면 Draft에만 영향을 받고 원본은 그대로 유지된다.
+    draft.y += 100
+    draft.foo.bar += 100
+
+    console.log("draft.sum", draft.sum)
+
+    expect(state.y).toBe(200)
+
+    expect(state.y).toBe(200)
+    expect(state.foo.bar).toBe(300)
+
+    expect(draft.y).toBe(300)
+    expect(draft.foo.bar).toBe(400)
+
+    // Draft는 생성 당시 state의 값을 그대로 유지하기 때문에 State가 변경해도 Draft의 값은 변화가 없다.
+    state.x = 200
+    expect(state.x).toBe(200)
+    expect(draft.x).toBe(100)
+
+    // commit을 하면 state의 값과 draft의 값이 같아진다.
+    commit()
+
+    expect(state.x).toBe(draft.x)
+    expect(state.y).toBe(draft.y)
+    expect(state.foo.bar).toBe(draft.foo.bar)
+    expect(state.foo.baz).toBe(draft.foo.baz)
+    expect(state.foo.baz).toBe(400)
+
+    // 아무 변화가 없던 Draft2가 commit이 되어도 변화가 없다.
+    commit2()
+
+    expect(state.x).toBe(draft.x)
+    expect(state.y).toBe(draft.y)
+    expect(state.foo.bar).toBe(draft.foo.bar)
+    expect(state.foo.baz).toBe(draft.foo.baz)
+    expect(state.foo.baz).toBe(400)
   })
 })

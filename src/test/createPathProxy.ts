@@ -30,10 +30,10 @@ const handleProxy = (getValue, override: ProxyHandler) => {
 const targetMap = new WeakMap()
 const memo = <T>(target: object, value: T): T => targetMap.get(target) || void targetMap.set(target, value) || value
 
-export const createPathProxy = <T>(root: T, fn: Function): T => {
+export const createPathProxy = <T extends object>(root: T, fn: () => ProxyHandler<T>): T => {
   const handlers = fn()
 
-  const createPathProxySub = (target: object, path: string[] = []) => {
+  const createPathProxySub = <T extends object>(target: T, path: string[] = []) => {
     const get = () => getValueFromPath(root, path)
 
     const override = {} //Object.create(null)
@@ -60,7 +60,7 @@ export const createPathProxy = <T>(root: T, fn: Function): T => {
       }
     }
 
-    return new Proxy(target, handleProxy(get, override))
+    return new Proxy(target, handleProxy(get, override)) as T
   }
 
   return createPathProxySub(root)

@@ -1,4 +1,4 @@
-import {store, reducer} from "../libs/proxy/newStore.ts"
+import {store, reducer} from "../deprecated/proxy/newStore.ts"
 
 store.Todo = reducer({}, (on) => {
   on.ADD_TODO((state) => (title) => {

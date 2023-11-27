@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useState, useSyncExternalStore} from "react"
+import {useEffect, useMemo, useState} from "react"
 
 type Readonly<T> = {
   readonly [K in keyof T]: Readonly<T[K]>
@@ -96,9 +96,7 @@ const createPathProxy = (root: unknown) => {
       handleProxy(get, {
         get(target, prop, reciver) {
           const result = getter(path)(target, prop, reciver)
-          return result && typeof result === "object"
-            ? createPathProxySub([...path, prop.toString()])
-            : result
+          return result && typeof result === "object" ? createPathProxySub([...path, prop.toString()]) : result
         },
 
         set(...args) {
@@ -113,13 +111,7 @@ const createPathProxy = (root: unknown) => {
   return createPathProxySub(root)
 }
 
-const createStateProxy = <T>(
-  store,
-  root: T,
-  dirtySet: Set<string>,
-  path: string[] = [],
-  deps = new Set()
-): T => {
+const createStateProxy = <T>(store, root: T, dirtySet: Set<string>, path: string[] = [], deps = new Set()): T => {
   const get = () => getValue(root, path)
 
   const state = new Proxy(
@@ -145,13 +137,7 @@ const createStateProxy = <T>(
 
         if (reducer instanceof Reducer && reducer.computed) {
           const tracked = new Set()
-          const forkState = createStateProxy(
-            store,
-            root,
-            dirtySet,
-            path,
-            tracked
-          )
+          const forkState = createStateProxy(store, root, dirtySet, path, tracked)
           const result = reducer.computed(forkState)
           console.log("tracked", tracked)
           return result
@@ -173,13 +159,7 @@ const createStateProxy = <T>(
           return next
         }
 
-        return createStateProxy(
-          store,
-          root,
-          dirtySet,
-          [...path, prop.toString()],
-          deps
-        )
+        return createStateProxy(store, root, dirtySet, [...path, prop.toString()], deps)
       },
 
       set(_, prop, value) {
@@ -338,10 +318,7 @@ export const createStore = <Actions, State>() => {
       },
   }) as Actions
 
-  const reducer = <T>(
-    init: Init<T, State>,
-    func: (on: On<Actions, State>) => void = noop
-  ): T => {
+  const reducer = <T>(init: Init<T, State>, func: (on: On<Actions, State>) => void = noop): T => {
     let initValue = undefined
     let computed = undefined
 

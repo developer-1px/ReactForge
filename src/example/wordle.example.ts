@@ -1,4 +1,4 @@
-import {createStore} from "../libs/proxy/lib.ts"
+import {createStore} from "../deprecated/proxy/lib.ts"
 
 interface Actions {
   PUSH_LETTER(key: string): void
@@ -149,10 +149,7 @@ store.currentLine = reducer(
       matched.forEach(({char, type}, i) => {
         setTimeout(async () => {
           state.currentLine[i] = {char, type: "pop", animation: "flip-in"}
-          setTimeout(
-            () => (state.currentLine[i] = {char, type, animation: "flip-out"}),
-            250
-          )
+          setTimeout(() => (state.currentLine[i] = {char, type, animation: "flip-out"}), 250)
         }, 250 * i)
       })
 
@@ -195,8 +192,7 @@ store.toast = reducer("", (on) => {
   const TOAST_DURATION = 1500
   const TOAST_DURATION_LONG = 5000
 
-  const delay = (duration: number) =>
-    new Promise((resolve) => setTimeout(resolve, duration))
+  const delay = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration))
 
   const effect = on
 
@@ -211,9 +207,6 @@ store.toast = reducer("", (on) => {
   })
 
   on.GAME_END((state) => () => {
-    dispatch.SHOW_TOAST(
-      "정답은 " + state.answer + " 입니다.",
-      TOAST_DURATION_LONG
-    )
+    dispatch.SHOW_TOAST("정답은 " + state.answer + " 입니다.", TOAST_DURATION_LONG)
   })
 })

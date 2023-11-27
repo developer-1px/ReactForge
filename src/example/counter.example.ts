@@ -1,4 +1,4 @@
-import {dispatch, reducer, store} from "../libs/proxy/newStore.ts"
+import {dispatch, reducer, store} from "../deprecated/proxy/newStore.ts"
 
 store.count = reducer(0, (on) => {
   on.INCREASE((state) => (by) => (state.count += by))

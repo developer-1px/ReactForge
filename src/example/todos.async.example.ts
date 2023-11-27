@@ -1,4 +1,4 @@
-import {store, reducer} from "../libs/proxy/newStore.ts"
+import {store, reducer} from "../deprecated/proxy/newStore.ts"
 import {createAPI} from "../libs/api/apiForge.ts"
 
 const auth = createAPI()
@@ -31,17 +31,11 @@ store.Todo = reducer({}, (on) => {
   on.UPDATE_TODO.SUCCESS(() => {})
   on.UPDATE_TODO.FAILURE(() => {})
 
-  on.TOGGLE_TODO(
-    (state) => (id) => (state.Todo[id].completed = !state.Todo[id].completed)
-  )
+  on.TOGGLE_TODO((state) => (id) => (state.Todo[id].completed = !state.Todo[id].completed))
 
   on.REMOVE_ALL((state) => () => (state.Todo = {}))
 })
 
-store.Query.todos = reducer((state) =>
-  Object.values(state.Todo).sort((a, b) => a.id.localeCompare(b.id))
-)
+store.Query.todos = reducer((state) => Object.values(state.Todo).sort((a, b) => a.id.localeCompare(b.id)))
 
-store.Query.filteredTodos = reducer((state) =>
-  state.Query.todos.filter((todo) => todo.completed)
-)
+store.Query.filteredTodos = reducer((state) => state.Query.todos.filter((todo) => todo.completed))
