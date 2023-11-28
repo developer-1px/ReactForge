@@ -4,10 +4,57 @@
 
 **ReactForge**는 All-in-One 프론트엔드 개발툴을 지향합니다.
 
-```ts
-// @TODO
-// 라이브러리 구현 코드는 test 폴더를 참고해주세요!!
+## Counter Example
+
+```tsx
+// State
+interface State {
+  count:number
+  doubledCount:number
+}
+
+// Action
+interface Actions {
+  INCREASE(by:number):void
+  DECREASE(by:number):void
+  RESET():void
+}
+
+// Store
+export const {store, reducer, useStore} = createStore<State, Actions>()
+
+// Reducer
+store.count = reducer(0, (on) => {
+  on.INCREASE((state) => (by) => (state.count += by))
+  on.DECREASE((state) => (by) => (state.count -= by))
+  on.RESET((state) => () => (state.count = 0))
+})
+
+// Computed
+store.doubledCount = reducer((state) => state.count * 2)
+
+// Component
+function Counter() {
+  const {dispatch, count, doubledCount} = useStore()
+
+  const 증가 = () => dispatch.INCREASE(1)
+
+  const 감소 = () => dispatch.DECREASE(1)
+
+  const 초기화 = () => dispatch.RESET()
+
+  return (
+    <>
+      <div>count is {count}</div>
+      <div>doubledCount is {doubledCount}</div>
+      <button onClick={증가}>+</button>
+      <button onClick={감소}>-</button>
+      <button onClick={초기화}>RESET</button>
+    </>
+  )
+}
 ```
+
 
 ### 주요 개념
 
@@ -15,31 +62,18 @@
 - State
 - Draft
 
+
 - Action
 - Dispatch
 - On
 - Reducer
-
-### 주요 특징
-- 중앙 집권형 개발방식
-- All-in-one
-- Proxy 기반
-
-- 타입 안전성 강화: TypeScript를 활용하여 상태 관리 시스템의 안정성과 정확성을 보장합니다.
-- 자동 타입 추론: 복잡한 타입 정의 없이 최대한 자동 추론을 활용하여 개발자의 부담을 줄입니다.
-- 간결하고 명확한 API: Redux의 기본 원칙을 유지하면서, 사용하기 쉬운 API를 제공합니다.
-- 코드 일관성 및 표준화: 프로젝트 내에서 일관된 코드 스타일과 구조를 촉진합니다.
+- Computed
 
 > - 진짜 쉽고 협업을 위한 상태관리를 만들어보자.
 > - 그동안은 너무 자유와 방종을 추구했다.
 > - 강력한 제한, 이렇게 밖에 쓸 수 없는 구조, 방식!
 > - 디버깅, 자동완성, 타입체킹 우선
 > - 그럼에도 외부 모듈 의존도 X
-
-- React를 보니 Pull 방식도 나쁜게 아니더라.
-- Proxy 기반의 업데이트
-- 접근하고 있는 값만 체크하고 이후 업데이트는 해당 값만 추려내서 업데이트 하는 방식으로 re-render 방지
-
 
 
 ## 특징
@@ -50,12 +84,7 @@
 ### 최소한의 보일러플레이트
 - Redux와 같은 기존의 상태 관리 라이브러리들은 많은 설정과 보일러플레이트 코드가 필요합니다. StateForge는 이런 부분을 대폭 간소화하여 개발자가 비즈니스 로직에 더 집중할 수 있도록 설계되었습니다. 필요한 기능을 몇 줄의 코드로 간결하게 표현할 수 있습니다.
 
-### 사전 구성된 필수 요소들
-- StateForge는 애플리케이션을 빠르게 시작할 수 있도록 사전에 필요한 많은 구성 요소들을 제공합니다. 이를 통해 개발자는 반복적인 설정 작업 없이 바로 상태 관리 로직의 구현에 착수할 수 있습니다.
-
-## 차별화 요소
-
-### Redux Toolkit 영감
+### Redux Toolkit + Jotai + Zustand + Valtio = ?
 - StateForge는 Redux Toolkit의 영감을 받아 더 나은 개발 경험을 제공합니다. 하지만 StateForge는 타입 안전성과 자동완성을 개선하여 Redux Toolkit이 제공하는 것 이상의 개발자 경험을 제공합니다.
 
 ### 직관적인 API
@@ -70,6 +99,10 @@
 - 쓸데없은 ActionType, ActionCreator 이런거 NoNo!
 - Proxy 기반으로 쓸데없이 불변성을 지키기 위한 코딩 하지 않는다.
 - 
+
+
+
+
 
 ```ts
 export interface Todo {
@@ -140,9 +173,22 @@ store.visibilityFilter = reducer("SHOW_ALL", on => {
 ```
 
 
+## 추가 예정
+
+- 비동기 액션 처리
+- 상태 추적 및 디버깅
+- 테스트 코드 작성하기
+- 상태관리 멘탈 모델
+- 조건부 스토리
+- 이펙트 처리
+- 엔티티
+- createComponentStore()
+- 등등...
+
+---
 
 
-### Create API
+## Create API
 
 목표
 

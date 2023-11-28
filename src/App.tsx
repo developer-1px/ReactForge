@@ -12,7 +12,9 @@ interface Actions {
   RESET(): void
 }
 
-const {store, reducer, dispatch, useStore} = createStore<State, Actions>()
+const {store, reducer, useStore} = createStore<State, Actions>()
+
+console.warn("createStore", store)
 
 store.count = reducer(0, (on) => {
   on.INCREASE((state) => (by) => (state.count += by))
@@ -31,7 +33,9 @@ store.doubledCount = reducer((state) => state.count * 2)
 function Counter2() {
   console.log("Counter2: re-render")
 
-  const {count2} = useStore("counter2")
+  const {count2, dispatch} = useStore("counter2")
+
+  console.warn("count2", count2)
 
   const 증가 = () => dispatch.INCREASE2(1)
 
@@ -52,9 +56,7 @@ function Counter2() {
 }
 
 function Counter() {
-  console.log("Counter: re-render")
-
-  const {count, doubledCount} = useStore("counter")
+  const {dispatch, count, doubledCount} = useStore("counter")
 
   const 증가 = () => dispatch.INCREASE(1)
 
@@ -65,7 +67,7 @@ function Counter() {
   return (
     <>
       <div className="card">
-        <button onClick={증가}>count is {count}</button>
+        <button onClick={증가}>ffxxxff count is {count}</button>
         <button onClick={증가}>doubledCount is {doubledCount}</button>
         <button onClick={증가}>+</button>
         <button onClick={감소}>-</button>
@@ -80,6 +82,7 @@ function App() {
 
   return (
     <>
+      <h1>Hello, world</h1>
       {/*<Timer />*/}
       <Counter />
       <Counter2 />

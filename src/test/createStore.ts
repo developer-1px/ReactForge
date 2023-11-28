@@ -1,5 +1,5 @@
 import {createPathProxy, getValueFromPath, ReflectGet, ReflectSet} from "./createPathProxy.ts"
-import {useEffect, useMemo, useState} from "react"
+import {useEffect, useMemo, useRef, useState} from "react"
 
 const isObject = (obj: unknown): obj is object => Object(obj) === obj
 
@@ -91,6 +91,8 @@ const getComputedValueFromStore = ($store: object, path: string[], prop: string)
 type SubscribeCallback = (...args: unknown[]) => void
 const stateMutations = new Set<SubscribeCallback>()
 
+window.stateMutations = stateMutations
+
 const subscribeStateMutation = (callback: SubscribeCallback) => {
   stateMutations.add(callback)
   return () => stateMutations.delete(callback)
@@ -149,22 +151,24 @@ const createStateProxy = <State extends object>($store: State, $state: State, na
     return {get, set}
   }) as State
 
+  const unsubscribe = () => {}
+
   // 변경사항이 생기면 version을 올린다.
-  const unsubscribe = subscribeStateMutation((target, path, prop) => {
-    // @FIXME: 이거 없애는 법을 고민해보자!
-    if ($state !== target) {
-      return
-    }
-
-    // version up!
-    const pathString = makePathString(path, prop)
-
-    if (deps.has(pathString)) {
-      version.value++
-
-      console.log(name, version)
-    }
-  })
+  // const unsubscribe = subscribeStateMutation((target, path, prop) => {
+  //   // @FIXME: 이거 없애는 법을 고민해보자!
+  //   if ($state !== target) {
+  //     return
+  //   }
+  //
+  //   // version up!
+  //   const pathString = makePathString(path, prop)
+  //
+  //   if (deps.has(pathString)) {
+  //     version.value++
+  //
+  //     console.log(name, version)
+  //   }
+  // })
 
   return [state, unsubscribe, version, deps] as const
 }
@@ -390,34 +394,35 @@ export const createStore = <State extends object, Actions>() => {
   //
   // --- React
   const useStore = (name: string) => {
-    const [$state, unsubscribeState, version, deps] = useMemo(() => {
-      console.log("???")
-      return createState(name)
-    }, [])
+    const [state, unsubscribeState, version, deps] = createState(name)
 
-    const [state, setState] = useState($state)
+    const [ver, setVersion] = useState(0)
+    const isUnsubscribed = useRef(false)
 
-    window.state = state
+    const unsubscribe = subscribeStateMutation((target, path, prop) => {
+      if (state.valueOf() !== target) return
 
-    // @FIXME: 어라? version이 필요가 없네??
-    useEffect(() => {
-      const unsubscribe = subscribeStateMutation((target, path, prop) => {
-        const pathString = makePathString(path, prop)
-
-        console.log("name", name, deps, target)
-
-        if (deps.has(pathString)) {
-          setState(new Proxy($state, {}))
-        }
-      })
-      return () => {
+      const pathString = makePathString(path, prop)
+      if (deps.has(pathString)) {
+        isUnsubscribed.current = true
         unsubscribeState()
         unsubscribe()
+        setVersion(ver + 1)
+      }
+    })
+
+    useEffect(() => {
+      return () => {
+        if (!isUnsubscribed) {
+          isUnsubscribed.current = false
+          unsubscribeState()
+          unsubscribe()
+        }
       }
     }, [])
 
     state.dispatch = dispatch
-    return state
+    return state as State & {dispatch: Actions}
   }
 
   return {store, reducer, createState, dispatch, useStore, $store, $state}
