@@ -1,41 +1,41 @@
 import "./App.css"
-import {dispatch, reducer, store, subscribe, useStore} from "./deprecated/proxy/newStore.ts"
+import {createStore} from "./test/createStore.ts"
+
+interface State {
+  count: number
+  doubledCount: number
+}
+
+interface Actions {
+  INCREASE(by: number): void
+  DECREASE(by: number): void
+  RESET(): void
+}
+
+const {store, reducer, dispatch, useStore} = createStore<State, Actions>()
 
 store.count = reducer(0, (on) => {
-  on.INCREASE((state) => (by) => {
-    state.count += 1
-  })
-
+  on.INCREASE((state) => (by) => (state.count += by))
   on.DECREASE((state) => (by) => (state.count -= by))
-
   on.RESET((state) => () => (state.count = 0))
 })
 
-store.count2 = reducer(20, (on) => {
+store.count2 = reducer(0, (on) => {
   on.INCREASE2((state) => (by) => (state.count2 += by))
-
   on.DECREASE2((state) => (by) => (state.count2 -= by))
-
   on.RESET2((state) => () => (state.count2 = 0))
 })
 
-store.sum = reducer((state) => state.count + state.count2)
-
-store.timer = 0
-
-subscribe((...args) => {
-  console.log(args)
-})
+store.doubledCount = reducer((state) => state.count * 2)
 
 function Counter2() {
   console.log("Counter2: re-render")
 
-  const count2 = useStore((state) => state.count2)
-  const count2 = state.count2
+  const {count2} = useStore("counter2")
 
   const 증가 = () => dispatch.INCREASE2(1)
 
-  const 감소 = () => dispatch.DECREASE2(5)
+  const 감소 = () => dispatch.DECREASE2(1)
 
   const 초기화 = () => dispatch.RESET2()
 
@@ -54,9 +54,7 @@ function Counter2() {
 function Counter() {
   console.log("Counter: re-render")
 
-  const state = useStore()
-  const count = state.count
-  const sum = state.sum
+  const {count, doubledCount} = useStore("counter")
 
   const 증가 = () => dispatch.INCREASE(1)
 
@@ -68,7 +66,7 @@ function Counter() {
     <>
       <div className="card">
         <button onClick={증가}>count is {count}</button>
-        <button onClick={증가}>sum is {sum}</button>
+        <button onClick={증가}>doubledCount is {doubledCount}</button>
         <button onClick={증가}>+</button>
         <button onClick={감소}>-</button>
         <button onClick={초기화}>RESET</button>

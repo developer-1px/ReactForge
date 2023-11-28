@@ -12,15 +12,12 @@ const handleProxy = (getValue, override: ProxyHandler) => {
   return new Proxy(
     {},
     {
-      get(target, p, receiver) {
+      get(target, p) {
         if (override[p]) return override[p]
         return (_, ...args) => {
-          try {
-            return Reflect[p](getValue(), ...args)
-          } catch (e) {
-            console.log("error", p, getValue())
-            return null
-          }
+          let value = getValue()
+          value = Object(value) !== value ? Object.create(null) : value
+          return Reflect[p](value, ...args)
         }
       },
     }

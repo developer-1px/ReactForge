@@ -153,9 +153,9 @@ store.visibilityFilter = reducer("SHOW_ALL", on => {
 
 
 ```ts
-type Response<T> = createResponse<{
+type Response<State> = createResponse<{
   status:number,
-  data:T
+  data:State
 }>
 
 interface API_Post {

@@ -1,5 +1,5 @@
 import {describe, expect, it, vi} from "vitest"
-import {createStore} from "./proxy.test.ts"
+import {createStore} from "./createStore.ts"
 
 interface State {
   x: number
@@ -33,9 +33,13 @@ describe("reducer", () => {
     })
 
     store.doubledCount = reducer((state) => state.count * 2)
+
     expect(state.count).toBe(0)
+    expect(state.doubledCount).toBe(0)
 
     dispatch.INCREASE(1)
+    // state.count += 1
+
     expect(state.count).toBe(1)
     expect(state.doubledCount).toBe(state.count * 2)
 
