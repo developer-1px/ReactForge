@@ -27,9 +27,9 @@ describe("reducer", () => {
     const [state] = createState("counter")
 
     store.count = reducer(0, (on) => {
-      on.INCREASE((state) => (by) => (state.count += by))
-      on.DECREASE((state) => (by) => (state.count -= by))
-      on.RESET((state) => () => (state.count = 0))
+      on.INCREASE((by) => (state) => (state.count += by))
+      on.DECREASE((by) => (state) => (state.count -= by))
+      on.RESET(() => (state) => (state.count = 0))
     })
 
     store.doubledCount = reducer((state) => state.count * 2)
@@ -38,8 +38,6 @@ describe("reducer", () => {
     expect(state.doubledCount).toBe(0)
 
     dispatch.INCREASE(1)
-    // state.count += 1
-
     expect(state.count).toBe(1)
     expect(state.doubledCount).toBe(state.count * 2)
 

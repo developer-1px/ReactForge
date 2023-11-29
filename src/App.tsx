@@ -17,15 +17,28 @@ const {store, reducer, useStore} = createStore<State, Actions>()
 console.warn("createStore", store)
 
 store.count = reducer(0, (on) => {
-  on.INCREASE((state) => (by) => (state.count += by))
-  on.DECREASE((state) => (by) => (state.count -= by))
-  on.RESET((state) => () => (state.count = 0))
+  on.INCREASE((by) => (state) => (state.count += by))
+  on.DECREASE((by) => (state) => (state.count -= by))
+  on.RESET(() => (state) => (state.count = 0))
+
+  // on(on.INCREASE, on.DECREASE, on.RESET)((type, payload) => (state) => {
+  //
+  // })
+  //
+  // // @NOTE: 이벤트가 삭제되었다면 상세창을 닫는다.
+  // // UI로 인해 삭제되었는지, 아니면 서버로부터 삭제되었는지는 알 수 없기에 250ms 뒤에 한번 더 체크 후 닫는다.
+  // on(store.activeEvent)((event) => (state) => {
+  //   if (!event) return
+  //   await delay(250)
+  //   GET(store.activeEvent)
+  //   state.is_show_event_detail$ = false
+  // })
 })
 
 store.count2 = reducer(0, (on) => {
-  on.INCREASE2((state) => (by) => (state.count2 += by))
-  on.DECREASE2((state) => (by) => (state.count2 -= by))
-  on.RESET2((state) => () => (state.count2 = 0))
+  on.INCREASE2((by) => (state) => (state.count2 += by))
+  on.DECREASE2((by) => (state) => (state.count2 -= by))
+  on.RESET2(() => (state) => (state.count2 = 0))
 })
 
 store.doubledCount = reducer((state) => state.count * 2)
@@ -34,8 +47,6 @@ function Counter2() {
   console.log("Counter2: re-render")
 
   const {count2, dispatch} = useStore("counter2")
-
-  console.warn("count2", count2)
 
   const 증가 = () => dispatch.INCREASE2(1)
 

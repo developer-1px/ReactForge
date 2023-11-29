@@ -91,7 +91,7 @@ const getComputedValueFromStore = ($store: object, path: string[], prop: string)
 type SubscribeCallback = (...args: unknown[]) => void
 const stateMutations = new Set<SubscribeCallback>()
 
-window.stateMutations = stateMutations
+globalThis.stateMutations = stateMutations
 
 const subscribeStateMutation = (callback: SubscribeCallback) => {
   stateMutations.add(callback)
@@ -151,26 +151,7 @@ const createStateProxy = <State extends object>($store: State, $state: State, na
     return {get, set}
   }) as State
 
-  const unsubscribe = () => {}
-
-  // 변경사항이 생기면 version을 올린다.
-  // const unsubscribe = subscribeStateMutation((target, path, prop) => {
-  //   // @FIXME: 이거 없애는 법을 고민해보자!
-  //   if ($state !== target) {
-  //     return
-  //   }
-  //
-  //   // version up!
-  //   const pathString = makePathString(path, prop)
-  //
-  //   if (deps.has(pathString)) {
-  //     version.value++
-  //
-  //     console.log(name, version)
-  //   }
-  // })
-
-  return [state, unsubscribe, version, deps] as const
+  return [state, deps] as const
 }
 
 //
@@ -264,7 +245,7 @@ export const createDraftProxy = <State extends object>($store: State, $state: St
   })
 
   const commit = () => {
-    const [state, unsubscribe] = createStateProxy($store, $state, "commit")
+    const [state] = createStateProxy($store, $state, "commit")
 
     traverseObject($draft, (path, prop, value) => {
       if (isPrimitive(value)) {
@@ -275,7 +256,6 @@ export const createDraftProxy = <State extends object>($store: State, $state: St
     })
 
     $draft = {} as State
-    unsubscribe()
   }
 
   return {draft, commit, unsubscribe}
@@ -289,14 +269,29 @@ type Computed<T> = {
 
 const createComputed = <State extends object, T>($store: State, $state: State, computedFn: (state: State) => T): Computed<T> => {
   let value: T | undefined = undefined
+  let version = 0
   let lastVersion = -1
 
-  const [state, unsubscribe, version] = createStateProxy($store, $state, "computed")
+  const [state, deps] = createStateProxy($store, $state, "computed")
+
+  // 변경사항이 생기면 version을 올린다.
+  const unsubscribe = subscribeStateMutation((target, path, prop) => {
+    // @FIXME: 이거 없애는 법을 고민해보자!
+    if ($state !== target) {
+      return
+    }
+
+    // version up!
+    const pathString = makePathString(path, prop)
+    if (deps.has(pathString)) {
+      version++
+    }
+  })
 
   const getValue = (): T | undefined => {
-    if (lastVersion !== version.value) {
+    if (lastVersion !== version) {
       value = computedFn(state)
-      lastVersion = version.value
+      lastVersion = version
     }
     return value
   }
@@ -306,7 +301,9 @@ const createComputed = <State extends object, T>($store: State, $state: State, c
 
 // Reducer
 type Init<State, T> = ((state: State) => T) | T
-type On<Actions, State> = {[K in keyof Actions]: (fn: (state: State) => Actions[K]) => void}
+type On<Actions, State> = {
+  [K in keyof Actions]: (fn: (...args: Actions[K] extends (...args: infer P) => unknown ? P : never[]) => (state: State) => void) => void
+}
 type ReducerFn<State, Actions> = (on: On<Actions, State>) => void
 
 class Reducer<State extends object, Actions, T> {
@@ -339,7 +336,8 @@ export const createStore = <State extends object, Actions>() => {
 
   const noop = () => {}
 
-  const reducer = <T>(init: Init<State, T>, fn: ReducerFn<State, Actions> = noop) => new Reducer(init, fn, $store, $state)
+  const reducer = <T, R extends T>(init: Init<State, T>, fn: ReducerFn<State, Actions> = noop): R =>
+    new Reducer(init, fn, $store, $state) as R
 
   const createState = (name: string) => createStateProxy($store, $state, name)
 
@@ -350,14 +348,22 @@ export const createStore = <State extends object, Actions>() => {
     const on = new Proxy(Function, {
       get: (_, actionType: string) => (fn: Function) => {
         if (actionType === type) {
+          // @TODO: fn이 function이 아니라 값이라면 바로 값을 넣어 줄 수 있다.
+          if (typeof fn !== "function") {
+            // @TODO: drfat[prop] = fn
+            // @TODO: 그럴려면 prop이름을 store.reducer에서 알 수 있어야 한다.
+          }
+
           // @TODO: state에 뭔가를 추적을 할 수 있는 것들을 넣으면 좋겠는데...
-          const result = fn(draft)(...args)
+          const result = fn(...args)(draft)
 
           // @TODO: reuslt 비동기처리
         }
       },
       apply(_, thisArg, argumentsList) {
         //TODO
+
+        console.log(argumentsList)
       },
     }) as On<Actions, State>
 
@@ -394,9 +400,8 @@ export const createStore = <State extends object, Actions>() => {
   //
   // --- React
   const useStore = (name: string) => {
-    const [state, unsubscribeState, version, deps] = createState(name)
-
-    const [ver, setVersion] = useState(0)
+    const [state, deps] = createState(name)
+    const [version, setVersionsion] = useState(0)
     const isUnsubscribed = useRef(false)
 
     const unsubscribe = subscribeStateMutation((target, path, prop) => {
@@ -404,10 +409,9 @@ export const createStore = <State extends object, Actions>() => {
 
       const pathString = makePathString(path, prop)
       if (deps.has(pathString)) {
-        isUnsubscribed.current = true
-        unsubscribeState()
         unsubscribe()
-        setVersion(ver + 1)
+        isUnsubscribed.current = true
+        setVersionsion(version + 1)
       }
     })
 
@@ -415,11 +419,10 @@ export const createStore = <State extends object, Actions>() => {
       return () => {
         if (!isUnsubscribed) {
           isUnsubscribed.current = false
-          unsubscribeState()
           unsubscribe()
         }
       }
-    }, [])
+    }, [unsubscribe])
 
     state.dispatch = dispatch
     return state as State & {dispatch: Actions}

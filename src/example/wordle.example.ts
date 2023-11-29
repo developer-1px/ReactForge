@@ -1,4 +1,4 @@
-import {createStore} from "../deprecated/proxy/lib.ts"
+import {createStore} from "../test/createStore.ts"
 
 interface Actions {
   PUSH_LETTER(key: string): void
@@ -43,7 +43,7 @@ interface States {
   toast: string
 }
 
-const {store, reducer, dispatch} = createStore<Actions, States>()
+const {store, reducer, dispatch} = createStore<States, Actions>()
 
 const KEY1 = "qwertyuiop".split("")
 const KEY2 = "asdfghjkl".split("")
@@ -55,15 +55,15 @@ const NUM_TRY_COUNT = 6
 const WORDS = ["world"]
 
 store.currentState = reducer("IDLE", (on) => {
-  on.MATCH_WORD((state) => () => {
+  on.MATCH_WORD(() => (state) => {
     state.currentState = "ANIMATING"
   })
 
-  on.NEXT_STEP((state) => () => {
+  on.NEXT_STEP(() => (state) => {
     state.currentState = "IDLE"
   })
 
-  on.GAME_END((state) => () => {
+  on.GAME_END(() => (state) => {
     state.currentState = "END"
   })
 })
@@ -72,7 +72,7 @@ store.currentState = reducer("IDLE", (on) => {
 store.answer = "world"
 
 store.currentLineIndex = reducer(0, (on) => {
-  on.NEXT_STEP((state) => () => {
+  on.NEXT_STEP(() => (state) => {
     state.currentLineIndex++
   })
 })
@@ -112,7 +112,7 @@ store.currentLine = reducer(
       return result
     }
 
-    on.PUSH_LETTER((state) => (char: string) => {
+    on.PUSH_LETTER((char) => (state) => {
       if (state.currentLine.length >= NUM_MAX_WORD_COUNT) {
         return
       }
@@ -120,11 +120,11 @@ store.currentLine = reducer(
       state.currentLine.push({char, type: "pop", animation: ""})
     })
 
-    on.BACKSPACE((state) => () => {
+    on.BACKSPACE(() => (state) => {
       state.currentLine.pop()
     })
 
-    on.ENTER((state) => () => {
+    on.ENTER(() => (state) => {
       if (state.currentLine.length < NUM_MAX_WORD_COUNT) {
         return
       }
@@ -140,7 +140,7 @@ store.currentLine = reducer(
       dispatch.MATCH_WORD(inputWord)
     })
 
-    on.MATCH_WORD((state) => (inputWord) => {
+    on.MATCH_WORD((inputWord) => (state) => {
       // match Animation
       // @TODO: animation with 비동기... 비동기를 어떻게 할까?
       const matched = matchWordle(inputWord, state.answer)
@@ -178,11 +178,11 @@ store.currentLine = reducer(
 )
 
 store.allLetters_animate = reducer(Array(NUM_TRY_COUNT).fill("none"), (on) => {
-  on.NOT_IN_WORD_LIST((state) => () => {
+  on.NOT_IN_WORD_LIST(() => (state) => {
     state.allLetters_animate[state.currentLineIndex] = "shake"
   })
 
-  on.NOT_IN_WORD_LIST_ANIMATE_END((state) => () => {
+  on.NOT_IN_WORD_LIST_ANIMATE_END(() => (state) => {
     state.allLetters_animate[state.currentLineIndex] = "none"
   })
 })
@@ -196,17 +196,17 @@ store.toast = reducer("", (on) => {
 
   const effect = on
 
-  on.SHOW_TOAST((state) => async (msg, duration = TOAST_DURATION) => {
+  on.SHOW_TOAST((msg, duration = TOAST_DURATION) => async (state) => {
     state.toast = msg
     await delay(duration)
     state.toast = ""
   })
 
-  on.NOT_IN_WORD_LIST((_) => () => {
+  on.NOT_IN_WORD_LIST(() => () => {
     dispatch.SHOW_TOAST("Not In word list")
   })
 
-  on.GAME_END((state) => () => {
+  on.GAME_END(() => (state) => {
     dispatch.SHOW_TOAST("정답은 " + state.answer + " 입니다.", TOAST_DURATION_LONG)
   })
 })

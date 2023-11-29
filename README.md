@@ -25,9 +25,9 @@ export const {store, reducer, useStore} = createStore<State, Actions>()
 
 // Reducer
 store.count = reducer(0, (on) => {
-  on.INCREASE((state) => (by) => (state.count += by))
-  on.DECREASE((state) => (by) => (state.count -= by))
-  on.RESET((state) => () => (state.count = 0))
+  on.INCREASE((by) => (state) => (state.count += by))
+  on.DECREASE((by) => (state) => (state.count -= by))
+  on.RESET(() => (state) => (state.count = 0))
 })
 
 // Computed
@@ -181,9 +181,10 @@ store.visibilityFilter = reducer("SHOW_ALL", on => {
 - 상태관리 멘탈 모델
 - 조건부 스토리
 - 이펙트 처리
-- 엔티티
+- 엔티티와 데이터 정규화(Normalize)
 - createComponentStore()
 - 등등...
+- 
 
 ---
 
