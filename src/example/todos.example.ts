@@ -23,7 +23,7 @@ store.Todo = reducer({}, (on) => {
   })
 })
 
-store.Query.todos = reducer((state) => Object.values(state.Todo))
+store.Query.todos = reducer((state) => Object.values(state.Todo).sort((a, b) => a.id - b.id))
 
 store.Query.filteredTodos = reducer((state) => {
   if (state.visibilityFilter === "SHOW_ACTIVE") {

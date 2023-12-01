@@ -18,3 +18,5 @@ store.count = reducer(0, (on) => {
   on.DECREASE((by) => (state) => (state.count -= by))
   on.RESET(() => (state) => (state.count = 0))
 })
+
+store.doubledCount = reducer((state) => state.count * 2)

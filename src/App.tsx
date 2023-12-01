@@ -4,6 +4,7 @@ import {createStore} from "./test/createStore.ts"
 interface State {
   count: number
   doubledCount: number
+  name: string
 }
 
 interface Actions {
@@ -20,19 +21,6 @@ store.count = reducer(0, (on) => {
   on.INCREASE((by) => (state) => (state.count += by))
   on.DECREASE((by) => (state) => (state.count -= by))
   on.RESET(() => (state) => (state.count = 0))
-
-  // on(on.INCREASE, on.DECREASE, on.RESET)((type, payload) => (state) => {
-  //
-  // })
-  //
-  // // @NOTE: 이벤트가 삭제되었다면 상세창을 닫는다.
-  // // UI로 인해 삭제되었는지, 아니면 서버로부터 삭제되었는지는 알 수 없기에 250ms 뒤에 한번 더 체크 후 닫는다.
-  // on(store.activeEvent)((event) => (state) => {
-  //   if (!event) return
-  //   await delay(250)
-  //   GET(store.activeEvent)
-  //   state.is_show_event_detail$ = false
-  // })
 })
 
 store.count2 = reducer(0, (on) => {

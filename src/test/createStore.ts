@@ -304,7 +304,8 @@ type Init<State, T> = ((state: State) => T) | T
 type On<Actions, State> = {
   [K in keyof Actions]: (fn: (...args: Actions[K] extends (...args: infer P) => unknown ? P : never[]) => (state: State) => void) => void
 }
-type ReducerFn<State, Actions> = (on: On<Actions, State>) => void
+type EffectFn = () => void
+type ReducerFn<State, Actions> = (on: On<Actions, State>, effect: EffectFn) => void
 
 class Reducer<State extends object, Actions, T> {
   public initValue: T | undefined

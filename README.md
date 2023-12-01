@@ -4,7 +4,7 @@
 
 **ReactForge**는 All-in-One 프론트엔드 개발툴을 지향합니다.
 
-## Counter Example
+## Basic Example
 
 ```tsx
 // State
@@ -32,7 +32,11 @@ store.count = reducer(0, (on) => {
 
 // Computed
 store.doubledCount = reducer((state) => state.count * 2)
+```
 
+You can use store in React.
+
+```tsx
 // Component
 function Counter() {
   const {dispatch, count, doubledCount} = useStore()
@@ -56,6 +60,26 @@ function Counter() {
 ```
 
 
+### Core Concept
+
+- 정답이 있는 프레임워크가 되자.
+- 강력한 제한을 걸면 코드는 클린해질 수 있다. 
+- 프레임워크를 쓰는 것 자체가 컨벤션이 될 수 있도록 하자.
+- 누가 작성을 해도 클린코드가 될 수 있도록 넛지를 발휘
+- 그렇지만 Draft한 개발 과정에서 빠르게 개발을 할 수 있도록 선 개발 후 리팩토링도 가능하게
+- 빠른 개발보다 추적과 디버깅을 더 중요하게 생각한다.
+- 그렇다고 프레임워크를 사용하는 것이 허들이 되어서는 안된다.
+
+
+### 원칙
+
+- 확실한 CQRS
+- 함수형 프로그래밍의 컨셉(불변성, 단방향)
+- state는 Action을 통해서만 수정을 할 수 있다.
+
+
+
+
 ### 주요 개념
 
 - Store
@@ -69,11 +93,13 @@ function Counter() {
 - Reducer
 - Computed
 
-> - 진짜 쉽고 협업을 위한 상태관리를 만들어보자.
-> - 그동안은 너무 자유와 방종을 추구했다.
-> - 강력한 제한, 이렇게 밖에 쓸 수 없는 구조, 방식!
-> - 디버깅, 자동완성, 타입체킹 우선
-> - 그럼에도 외부 모듈 의존도 X
+
+### 영감을 받은 개념
+
+- CQRS 
+- Redux(Single Source, Reducer)
+- NgRx(Effect)
+
 
 
 ## 특징
@@ -99,6 +125,22 @@ function Counter() {
 - 쓸데없은 ActionType, ActionCreator 이런거 NoNo!
 - Proxy 기반으로 쓸데없이 불변성을 지키기 위한 코딩 하지 않는다.
 - 
+
+---
+
+## Store
+
+"Store"라는 용어는 상점(store)에서 유래했습니다. 상점처럼 다양한 물건을 한 곳에 모아두고 필요할 때 꺼내 쓰는 것과 비슷하게, 상태 관리에서의 store는 애플리케이션의 다양한 데이터(State)를 하나의 장소에 저장하고 필요할 때 컴포넌트가 접근하여 사용할 수 있도록 합니다.
+
+이러한 중앙 집중식 관리 방식은 데이터의 일관성을 유지하고, 상태 변화에 대한 추적과 디버깅을 용이하게 합니다. 또한, 애플리케이션의 상태를 한 곳에서 관리함으로써 데이터 흐름을 보다 명확하게 만들고, 복잡한 상태 관리를 단순화하는 데 도움이 됩니다.
+
+
+### Store의 역할
+
+- 상태 보관: 애플리케이션의 전체 상태를 하나의 객체로 저장합니다.
+- 상태 접근: 컴포넌트에서 store의 상태에 접근할 수 있게 합니다.
+- 상태 갱신: 액션을 통해 상태를 변경하고, 이에 대응하는 리듀서로 새로운 상태를 생성합니다.
+- 구독 관리: 상태 변화를 구독하고 있는 컴포넌트에 변화를 알립니다.
 
 
 
@@ -136,16 +178,16 @@ export interface TodoActions {
 import {store, reducer} from "./store"
 
 store.Todo = reducer([], on => {
-  on.ADD_TODO(state => (text) => {
+  on.ADD_TODO((text) => (state) => {
     const newTodo = {id: Date.now(), text, completed: false}
     state.Todo[id] = newTodo
   })
 
-  on.TOGGLE_TODO(state => (id) => {
+  on.TOGGLE_TODO((id) => (state) => {
     state.Todo[id].completed = !state.Todo[id].completed
   })
 
-  on.REMOVE_TODO(state => (id) => {
+  on.REMOVE_TODO((id) => (state) => {
     delete state.Todo[id]
   })
 })
@@ -168,9 +210,11 @@ store.Query.filteredTodos = reducer(state => {
 })
 
 store.visibilityFilter = reducer("SHOW_ALL", on => {
-  on.SET_VISIBILITY_FILTER(state => filter => state.visibilityFilter = filter)
+  on.SET_VISIBILITY_FILTER((filter) => (state) => state.visibilityFilter = filter)
 })
 ```
+
+
 
 
 ## 추가 예정

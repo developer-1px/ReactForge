@@ -194,8 +194,6 @@ store.toast = reducer("", (on) => {
 
   const delay = (duration: number) => new Promise((resolve) => setTimeout(resolve, duration))
 
-  const effect = on
-
   on.SHOW_TOAST((msg, duration = TOAST_DURATION) => async (state) => {
     state.toast = msg
     await delay(duration)
