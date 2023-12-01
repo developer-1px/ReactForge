@@ -1,10 +1,10 @@
 import "./App.css"
 import {createStore} from "./test/createStore.ts"
+import {useEffect} from "react"
 
 interface State {
   count: number
   doubledCount: number
-  name: string
 }
 
 interface Actions {
@@ -13,14 +13,37 @@ interface Actions {
   RESET(): void
 }
 
-const {store, reducer, useStore} = createStore<State, Actions>()
+const logger = (api) => (next) => (action) => {
+  const {type, payload} = action
+  console.group(type + "(", ...payload, ")")
+  console.groupCollapsed("(callstack)")
+  console.trace("")
+  console.groupEnd()
+  next(action)
+  console.log(api.getState())
+  console.groupEnd()
+}
 
-console.warn("createStore", store)
+const {store, reducer, useStore} = createStore<State, Actions>({
+  middleware: logger,
+})
 
-store.count = reducer(0, (on) => {
+store.count = reducer(0, (on, effect) => {
   on.INCREASE((by) => (state) => (state.count += by))
   on.DECREASE((by) => (state) => (state.count -= by))
   on.RESET(() => (state) => (state.count = 0))
+
+  effect("[count] localStorage에서 불러오기", (track) => (state, dispatch) => {
+    const count = localStorage.getItem("count")
+    if (count) {
+      dispatch((state) => (state.count = +count))
+    }
+  })
+
+  effect("[count] localStorage에 저장하기", (track) => (state) => {
+    const count = track((state) => state.count)
+    localStorage.setItem("count", count)
+  })
 })
 
 store.count2 = reducer(0, (on) => {
@@ -63,10 +86,12 @@ function Counter() {
 
   const 초기화 = () => dispatch.RESET()
 
+  useEffect(() => dispatch("@@init"), [])
+
   return (
     <>
       <div className="card">
-        <button onClick={증가}>ffxxxff count is {count}</button>
+        <button onClick={증가}>count is {count}</button>
         <button onClick={증가}>doubledCount is {doubledCount}</button>
         <button onClick={증가}>+</button>
         <button onClick={감소}>-</button>

@@ -1,5 +1,6 @@
 import {createPathProxy, getValueFromPath, ReflectGet, ReflectSet} from "./createPathProxy.ts"
-import {useEffect, useMemo, useRef, useState} from "react"
+import {useEffect, useRef, useState} from "react"
+import {ar} from "vitest/dist/reporters-5f784f42"
 
 const isObject = (obj: unknown): obj is object => Object(obj) === obj
 
@@ -104,7 +105,6 @@ const publishStateMutation = (...args: unknown[]) => {
 
 const createStateProxy = <State extends object>($store: State, $state: State, name: string = "") => {
   const deps = new Set<string>()
-  const version = {value: 0}
 
   const state = createPathProxy($state, () => {
     // State에서 값 가져오기 규칙
@@ -157,6 +157,7 @@ const createStateProxy = <State extends object>($store: State, $state: State, na
 //
 //
 // --- Draft
+type Draft<State> = State
 
 const cloneOf = (value: unknown) => {
   if (Array.isArray(value)) return [...value]
@@ -230,7 +231,7 @@ export const createDraftProxy = <State extends object>($store: State, $state: St
     }
 
     return {get, set}
-  }) as State
+  }) as Draft<State>
 
   // 불변성을 유지하기 위해서 새로운 값이 바뀌면 draft는 이전 값을 유지한다.
   const unsubscribe = subscribeStateMutation((target, path, prop, _value, existValue) => {
@@ -300,12 +301,20 @@ const createComputed = <State extends object, T>($store: State, $state: State, c
 }
 
 // Reducer
-type Init<State, T> = ((state: State) => T) | T
+type Selector<State, T> = (state: State) => T
+type Init<State, T> = T | Selector<State, T>
+type MutateFn<State, Actions> = (state: State, dispatch: Actions) => void | unknown | Promise<unknown>
+
 type On<Actions, State> = {
-  [K in keyof Actions]: (fn: (...args: Actions[K] extends (...args: infer P) => unknown ? P : never[]) => (state: State) => void) => void
+  [K in keyof Actions]: (fn: (...args: Actions[K] extends (...args: infer P) => unknown ? P : never[]) => MutateFn<State, Actions>) => void
 }
-type EffectFn = () => void
-type ReducerFn<State, Actions> = (on: On<Actions, State>, effect: EffectFn) => void
+
+type TrackFn<State> = <T>(selector: Selector<State, T>) => T
+type EffectFn<State, Actions> = (desc: string, fn: (track: TrackFn<State>) => MutateFn<State, Actions>) => void
+
+type ReducerFn<State, Actions> = (on: On<Actions, State>, effect: EffectFn<State, Actions>) => void
+
+type Dispatch<Actions> = Actions & ((type: string, ...payload: unknown[]) => void)
 
 class Reducer<State extends object, Actions, T> {
   public initValue: T | undefined
@@ -326,28 +335,59 @@ class Reducer<State extends object, Actions, T> {
   }
 }
 
+interface StoreConfig {
+  middleware: () => void
+}
+
 //
 //
 // --- Store
-export const createStore = <State extends object, Actions>() => {
+export const createStore = <State extends object, Actions>(options = {}) => {
+  const noop = () => {}
+
+  const defaultOptions = {}
+  options = {...defaultOptions, ...options}
+  const middleware = options.middleware ?? noop
+  const next = ({type, payload}) => $dispatch(type, payload)
+
+  //
   const $store = {} as State
   const $state = {} as State
 
   const store = createStoreProxy($store, $state)
-
-  const noop = () => {}
 
   const reducer = <T, R extends T>(init: Init<State, T>, fn: ReducerFn<State, Actions> = noop): R =>
     new Reducer(init, fn, $store, $state) as R
 
   const createState = (name: string) => createStateProxy($store, $state, name)
 
+  // Effect
+  const effectMap = Object.create(null)
+  const effectRunner = []
+  const effect: EffectFn<State, Actions> = (desc: string, fn) => {
+    // @TODO: 실행을 한 타이밍 늦게 할 수 있어야 한다.
+
+    if (!effectMap[desc]) {
+      console.warn("[effect/start]", desc)
+      effectRunner.push(fn)
+      effectMap[desc] = fn
+
+      const track = <T>(selector: Selector<State, T>) => {
+        const value = selector($state)
+        console.info("tracked", value)
+        return value
+      }
+
+      fn(track)($state, dispatch)
+    }
+  }
+
   // createDispatch
   const $dispatch = (type: string, args: unknown[]) => {
     const {draft, commit, unsubscribe} = createDraftProxy($store, $state)
 
     const on = new Proxy(Function, {
-      get: (_, actionType: string) => (fn: Function) => {
+      get: (_, actionType: string) => (fn: (...args: unknown[]) => MutateFn<State, Actions>) => {
         if (actionType === type) {
           // @TODO: fn이 function이 아니라 값이라면 바로 값을 넣어 줄 수 있다.
           if (typeof fn !== "function") {
@@ -356,14 +396,17 @@ export const createStore = <State extends object, Actions>() => {
           }
 
           // @TODO: state에 뭔가를 추적을 할 수 있는 것들을 넣으면 좋겠는데...
-          const result = fn(...args)(draft)
+          const result = fn(...args)(draft, dispatch)
+
+          // do effects
+          console.info("effect runner", effectRunner)
 
           // @TODO: reuslt 비동기처리
         }
       },
-      apply(_, thisArg, argumentsList) {
-        //TODO
 
+      apply(_, __, argumentsList) {
+        //TODO
         console.log(argumentsList)
       },
     }) as On<Actions, State>
@@ -372,30 +415,30 @@ export const createStore = <State extends object, Actions>() => {
     traverseObject(store, (path, prop, value) => {
       const reducer = value
       if (reducer instanceof Reducer) {
-        reducer.reducerFn(on)
+        reducer.reducerFn(on, effect)
         return false
       }
     })
 
-    commit()
-
     // @TODO: 비동기 unsubscribe를 고려해야됨.
     unsubscribe()
+
+    return commit()
   }
 
   const dispatch = new Proxy(Function, {
     get:
       (_, type: string) =>
       (...payload: unknown[]) => {
-        // console.group(type + "(", ...payload, ")")
-        // console.groupCollapsed("(callstack)")
-        // console.trace("")
-        // console.groupEnd()
-        console.log("[dispatch]", type, ...payload)
-        $dispatch(type, payload)
-        // console.groupEnd()
+        const action = {type, payload}
+        middleware({dispatch, getState: () => $state})(next)(action)
       },
-  }) as Actions
+    apply(_, thisArg, argumentsList) {
+      //TODO
+      const [type, ...payload] = argumentsList
+      return dispatch[type](...payload)
+    },
+  }) as Dispatch<Actions>
 
   //
   //
@@ -425,8 +468,9 @@ export const createStore = <State extends object, Actions>() => {
       }
     }, [unsubscribe])
 
+    // @TODO: state에 직접 입력하는 방식이 아니라 proxy에서 get를 하자!
     state.dispatch = dispatch
-    return state as State & {dispatch: Actions}
+    return state as Readonly<State> & {dispatch: Dispatch<Actions>}
   }
 
   return {store, reducer, createState, dispatch, useStore, $store, $state}

@@ -48,9 +48,17 @@ store.account = reducer(null, (on, effect) => {
 
   on.계정정보조회하기_SUCCESS((account) => (state) => (state.account = account))
 
-  //
+  on.계정정보_동기화((user) => (state) => {
+    if (!state.account) {
+      return
+    }
+    state.account.display_name = user.display_name
+    state.account.avatar_url = user.avatar_url
+    state.account.space_id = user.space_id
+  })
+
   effect("유저정보가 갱신되면 Account에도 동기화하기", (track) => (state, dispatch) => {
-    const accountId = track((state) => state.account.id)
+    const accountId = track((state) => state.account?.id)
     if (!accountId) {
       return
     }
@@ -71,15 +79,6 @@ store.account = reducer(null, (on, effect) => {
     })
 
     dispatch.계정정보_동기화(user)
-  })
-
-  on.계정정보_동기화((user) => (state) => {
-    if (!state.account) {
-      return
-    }
-    state.account.display_name = user.display_name
-    state.account.avatar_url = user.avatar_url
-    state.account.space_id = user.space_id
   })
 })
 
