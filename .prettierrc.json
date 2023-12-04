@@ -6,6 +6,6 @@
   "singleQuote": false,
   "bracketSpacing": false,
   "bracketSameLine": true,
-  "singleAttributePerLine": true,
+  "singleAttributePerLine": false,
   "arrowParens": "always"
 }

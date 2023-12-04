@@ -23,17 +23,18 @@ interface Actions {
 
 ```ts
 // Store
-export const {store, reducer, useStore} = createStore<State, Actions>()
+export const useStore = createStore<State, Actions>(({store, reducer}) => {
 
-// Reducer
-store.count = reducer(0, (on) => {
-  on.INCREASE((by) => (state) => (state.count += by))
-  on.DECREASE((by) => (state) => (state.count -= by))
-  on.RESET(() => (state) => (state.count = 0))
+  // Reducer
+  store.count = reducer(0, (on) => {
+    on.INCREASE((by) => (state) => (state.count += by))
+    on.DECREASE((by) => (state) => (state.count -= by))
+    on.RESET(() => (state) => (state.count = 0))
+  })
+
+  // Computed
+  store.doubledCount = reducer((state) => state.count * 2)
 })
-
-// Computed
-store.doubledCount = reducer((state) => state.count * 2)
 ```
 
 You can use store in React.
@@ -111,42 +112,43 @@ export interface TodoActions {
 ```
 
 ```ts
-import {store, reducer} from "./store"
+export const useStore = createStore<TodoState, TodoActions>(({store, reducer}) => {
 
-store.Todo = reducer([], on => {
-  on.ADD_TODO((text) => (state) => {
-    const newTodo = {id: Date.now(), text, completed: false}
-    state.Todo[id] = newTodo
+  store.Todo = reducer([], on => {
+    on.ADD_TODO((text) => (state) => {
+      const newTodo = {id: Date.now(), text, completed: false}
+      state.Todo[id] = newTodo
+    })
+
+    on.TOGGLE_TODO((id) => (state) => {
+      state.Todo[id].completed = !state.Todo[id].completed
+    })
+
+    on.REMOVE_TODO((id) => (state) => {
+      delete state.Todo[id]
+    })
   })
 
-  on.TOGGLE_TODO((id) => (state) => {
-    state.Todo[id].completed = !state.Todo[id].completed
+  store.Query.todos = reducer(state => Object.values(state.Todo))
+
+  store.Query.filteredTodos = reducer(state => {
+    const todos = state.Query.todos
+    const visibilityFilter = state.visibilityFilter
+
+    if (visibilityFilter === "SHOW_ACTIVE") {
+      return todos.filter(todo => !todo.completed)
+    }
+
+    if (visibilityFilter === "SHOW_COMPLETED") {
+      return todos.filter(todo => todo.completed)
+    }
+
+    return todos
   })
 
-  on.REMOVE_TODO((id) => (state) => {
-    delete state.Todo[id]
+  store.visibilityFilter = reducer("SHOW_ALL", on => {
+    on.SET_VISIBILITY_FILTER((filter) => (state) => state.visibilityFilter = filter)
   })
-})
-
-store.Query.todos = reducer(state => Object.values(state.Todo))
-
-store.Query.filteredTodos = reducer(state => {
-  const todos = state.Query.todos
-  const visibilityFilter = state.visibilityFilter
-
-  if (visibilityFilter === "SHOW_ACTIVE") {
-    return todos.filter(todo => !todo.completed)
-  }
-
-  if (visibilityFilter === "SHOW_COMPLETED") {
-    return todos.filter(todo => todo.completed)
-  }
-
-  return todos
-})
-
-store.visibilityFilter = reducer("SHOW_ALL", on => {
-  on.SET_VISIBILITY_FILTER((filter) => (state) => state.visibilityFilter = filter)
 })
 ```
 
@@ -242,8 +244,6 @@ store.visibilityFilter = reducer("SHOW_ALL", on => {
 
 
 ```ts
-import {store, reducer} from "./store"
-
 store.Todo = reducer([], on => {
   on.ADD_TODO((text) => (state) => {
     const newTodo = {id: Date.now(), text, completed: false}
@@ -268,7 +268,7 @@ store.Todo = reducer([], on => {
 ```ts
 // 결국 순수함수 형태로 제공된다. 
 function createReducer(state, action, reducerFn) {
-  const draft = clone(state)
+  const draft = clone(state) // 구조적 공유를 통한 효과적인 복사
   const on = helper(action)
   reducerFn(on)(draft)
   return draft
@@ -276,7 +276,6 @@ function createReducer(state, action, reducerFn) {
 ```
 
 ---
-
 ### classicReducer
 
 > 🤔 (상상) classicReducer도 마이그레이션용으로 제공해 볼까??
@@ -311,18 +310,269 @@ function todoReducer(state = {Todo:{}}, action) {
 store.todo = classicReducer(TodoReducer)
 ```
 
+---
 
+
+## On
+
+
+```ts
+
+// on.ACTION(params => (state) => state.value++))
+on.INCREASE(by => (state) => state.count)
+
+// on 함수를 이용하면, 하나의 함수로 2가지 액션에 대응할 수 있다.
+on(on.INCREASE, on.DECREASE)((inc, dec) => (state) => {
+  acount = inc ? inc : -dec
+  state.count += amount
+})
+        
+// on 함수와 store를 결합하여 해당 값이 바뀔때 액션으로 받을 수 있다.        
+// like Rxjs's combineLastest
+// each value changes, but every value is not undefined
+on(store.account.id, store.User)((accountId, User) => (state) => {
+  const user = User[accountId]
+  if(!user) return
+  state.account.name = user.name
+})
+
+// SUCCESS or FAILURE or onChange(store.User)
+on(on.SUCCESS, on.FAILURE, store.User)((succ, fail, user) => (state) => {
+  if (succ) state.ok = true
+  else if (fail) state.ok = false
+  else state.ok = !!user
+})
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# Advanced
+
+## Advanced Action
+
+### Action Slot Pilling
+
+```ts
+interface Actions {
+  ADD_TODO(text:string, id?:number):void
+}
+
+// action middleware
+store.dispatch.ADD_TODO = (text:string, id:number = Date.now()) => {
+  return [text, id]
+}
+
+store.Todo = reducer([], (on) => {
+  on.ADD_TODO((text, id) => (state) => {
+    state.Todo[id] = {id, text, complted: false}
+  })
+
+  /* Bad 
+  on.ADD_TODO((text) => (state) => {
+    // Date.now() is not pure!
+    const newTodo = {id: Date.now(), text, completed: false}
+    state.Todo[id] = newTodo
+  })
+  */
+})
+
+
+function Component() {
+  const someHandler = (msg:string) => dispatch.ADD_TODO(msg)
+  return <></>
+}
+```
+
+### Async Action
+
+Promise를 return하면 SUCCESS, FAILTURE, SETTLED 액션이 자동으로 생성되어 호출된다.
+
+```ts
+
+// async action (promise)
+store.dispatch.ADD_TODO_ASYNC = (text:string, id:string) => {
+  return new Promise(resolve => setTimeout(() => resolve([text, id]), 1000)
+}
+
+store.Todo = reducer({}, on => {
+  on.ADD_TODO_ASYNC.REQUEST(res => (state) => {
+    /* ... */
+  })
+
+  on.ADD_TODO_ASYNC.SUCCESS(res => (state) => {
+    /* ... */
+  })
+
+  on.ADD_TODO_ASYNC.FAILTURE(res => (state) => {
+    /* ... */
+  })
+
+  on.ADD_TODOADD_TODO.COMPLETED(res => (state) => {
+    /* ... */
+  })
+})
+```
+
+### Mutation
+
+실전 예제: API 연동,
+
+```ts
+interface Todo {
+  id:string
+  text:string
+  completed:boolean
+}
+
+interface Actions {
+  ADD_TODO: {
+    (text:string):(dispatch)=>Promise
+    REQUEST(todo:Todo)
+    SUCCESS(todo:Todo)
+    FAILTURE(error:Error)
+  }
+
+  REMOVE_TODO: {
+    
+  }
+}
+
+store.dispatch.ADD_TODO = (text:string) => (dispatch) => {
+  const id = Math.random().toString(36).slice(2)
+  const newTodo = {id, text, completed: false}
+  return dispatch.REQUEST(newTodo, api.POST("/todos")(newTodo).then(res => res.data))
+}
+
+store.dispatch.REMOVE_TODO = (id:string) => (dispatch) => {
+  return dispatch.REQUEST(id, api.DELETE("/todos/:id")(id))
+}
+
+
+store.dispatch.REMOVE_TODO = mutation((id:string) => api.DELETE("/todos/:id")(id))
+
+store.dispatch.ADD_TODO = mutation(
+  (text) => {
+    const id = Math.random().toString(36).slice(2)
+    return {id, text, completed: false}
+  },
+  (newTodo) => api.POST("/todos")(newTodo)
+)
+
+
+
+
+store.dispatch.ADD_TODO = mutation()
+        .onMutate(text => {
+          const id = Math.random().toString(36).slice(2)
+          return {id, text, completed: false}
+        })
+        .mutateFn(newTodo => api.POST("/todos")(newTodo))
+        .onSuccess(() => invalidate("/todos/", id)
+)
+
+
+
+
+store.Todo = reducer([], (on, effect) => {
+  
+  on.ADD_TODO.REQUEST(newTodo => (state) => {
+    state.Todo[id] = newTodo
+  })
+
+  on.ADD_TODO.SUCCESS((todo, context) => {
+    delete state.Todo[context.id]
+    state.Todo[todo.id] = todo
+  })
+
+  // request때 컨텐츠는 자동으로 복원된다.
+  on.ADD_TODO.FAILTURE((todo, context) => {
+    /* TODO */
+  })
+  
+  on.TOGGLE_TODO((id) => (state) => {
+    state.Todo[id].completed = !state.Todo[id].completed
+  })
+
+  on.REMOVE_TODO.REQUEST((id) => (state) => {
+    delete state.Todo[id]
+  })
+})
+```
+
+```ts
+
+
+store.dispatch.REMOVE_TODO = (id:string) => (dispatch, transaction) => {
+  return dispatch.REQUEST(id, transaction(state => {
+    delete state.Todo[id]
+    return api.DELETE("/todos/:id")(id)
+  }))
+}
+
+
+
+
+```
+
+
+
+> 그밖에 Action 확장 생각거리들..
+
+
+- **.CANCELED**: 진행 중인 비동기 작업을 취소하는 액션입니다. 사용자가 요청을 중단하거나 다른 작업으로 전환할 때 유용합니다.
+
+
+- **.RETRY**: 실패한 비동기 작업을 다시 시도하는 액션입니다. FAILURE 후에 네트워크 상태가 개선되거나 오류가 수정된 경우 유용합니다.
+
+
+- **.THROTTLE / .DEBOUNCE**: 요청의 빈도를 조절하는 액션입니다. 예를 들어, 사용자 입력에 따른 자동 완성 기능에서 서버 부하를 줄이기 위해 사용될 수 있습니다.
+
+
+- **.UPDATE**: 진행 중인 비동기 작업에 대한 중간 업데이트를 제공하는 액션입니다. 예를 들어, 파일 업로드의 진행 상황을 표시할 때 사용될 수 있습니다.
+
+
+- **.POLLING_START / ,POLLING_STOP**: 정기적으로 데이터를 요청하는 폴링(polling) 작업을 시작하거나 중단하는 액션입니다. 실시간 업데이트가 필요한 경우 사용될 수 있습니다.
+
+---
+
+## 개발 멘탈 모델
+
+1. 컴포넌트에서는 1)값과 2)dispatch만 사용한다.
+   1. 변하는 값을 value로 만들고 State에 등록한다.
+   2. 이벤트 핸들러는 그대로 dispatch하고 Action을 등록한다.
+3. 해당 Action을 하고 나면 어떤 값이 바뀌어야 하는지 생각해본다.
+   1. 바뀌는 값의 reducer에 가서 on.ACTION 이후 값을 변화 시킨다.
+4. 요구사항을 생각해본다. 
+   1. 어떤 값이 바뀌어야 하는가?
+   2. 그 값이 바뀌기 위해서 어떤 데이터가 필요한가?
+   3. 언제 그값이 바뀌어야 하는가?
+      1. 항상 특정 데이터가 추가로 필요하다면 on(store.data.path)를 이용한다.
+      2. 특정 시점이 필요하다면 disaptch.ACTION을 통해서 해결한다.
+
+
+   
 
 
 
 ## 추가 예정
 
-- 비동기 액션 처리
+- ~~비동기 액션 처리~~
+- 이펙트 처리
 - 상태 추적 및 디버깅
 - 테스트 코드 작성하기
 - 상태관리 멘탈 모델
 - 조건부 스토리
-- 이펙트 처리
 - 엔티티와 데이터 정규화(Normalize)
 - createComponentStore()
 - 등등...

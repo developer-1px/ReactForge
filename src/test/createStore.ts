@@ -1,6 +1,5 @@
 import {createPathProxy, getValueFromPath, ReflectGet, ReflectSet} from "./createPathProxy.ts"
 import {useEffect, useRef, useState} from "react"
-import {ar} from "vitest/dist/reporters-5f784f42"
 
 const isObject = (obj: unknown): obj is object => Object(obj) === obj
 
@@ -339,10 +338,36 @@ interface StoreConfig {
   middleware: () => void
 }
 
+// @FIXME: 임시
+const logger = (api) => (next) => (action) => {
+  const {type, payload} = action
+  console.group(type + "(", ...payload, ")")
+  // console.groupCollapsed("(callstack)")
+  // console.trace("")
+  // console.groupEnd()
+  next(action)
+  console.log(api.getState())
+  console.groupEnd()
+}
+
+const tmpOption = {
+  middleware: logger,
+}
+
+type ReducerFactoryFn<State, Actions> = <T, R extends T>(init: Init<State, T>, fn?: ReducerFn<State, Actions>) => R
+
+interface Builder<State, Actions> {
+  store: State
+  reducer: ReducerFactoryFn<State, Actions>
+}
+
 //
 //
 // --- Store
-export const createStore = <State extends object, Actions>(options = {}) => {
+export const createStore = <State extends object, Actions = null>(
+  init: (builder: Builder<State, Actions>) => void,
+  options = tmpOption
+) => {
   const noop = () => {}
 
   const defaultOptions = {}
@@ -443,7 +468,7 @@ export const createStore = <State extends object, Actions>(options = {}) => {
   //
   //
   // --- React
-  const useStore = (name: string) => {
+  const useStore = (name: string = "") => {
     const [state, deps] = createState(name)
     const [version, setVersionsion] = useState(0)
     const isUnsubscribed = useRef(false)
@@ -473,5 +498,15 @@ export const createStore = <State extends object, Actions>(options = {}) => {
     return state as Readonly<State> & {dispatch: Dispatch<Actions>}
   }
 
-  return {store, reducer, createState, dispatch, useStore, $store, $state}
+  init({store, reducer})
+
+  // {createState, dispatch, , $store, $state}
+  return useStore
+}
+
+export const createComponentStore = <State extends object, Actions, Store>(init: (builder: Builder<State, Actions>) => void) => {
+  const useStore = createStore<State, Actions>(init)
+
+  const useStoreProvider = (props) => props.children
+  return [useStoreProvider, useStore] as const
 }

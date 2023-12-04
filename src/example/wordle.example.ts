@@ -37,7 +37,6 @@ interface States {
   currentLineIndex: number
 
   currentLine: Computed<Array<Key>>
-
   matchedLetters: Record<string, KeyType>
 
   toast: string

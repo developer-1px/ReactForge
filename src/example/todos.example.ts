@@ -1,24 +1,53 @@
-import {store, reducer} from "../deprecated/proxy/newStore.ts"
+import {createStore} from "../test/createStore.ts"
+
+interface Todo {
+  id: number
+  title: string
+  completed: boolean
+}
+
+type VisibilityFilter = "SHOW_ALL" | "SHOW_ACTIVE" | "SHOW_COMPLETED"
+
+interface State {
+  Query: {
+    todos: Todo[]
+    filteredTodos: Todo[]
+    numRemainingTodos: number
+  }
+  Todo: Record<string, Todo>
+
+  visibilityFilter: VisibilityFilter
+}
+
+interface Actions {
+  ADD_TODO(title: string): void
+  TOGGLE_TODO(id: string): void
+  REMOVE_TODO(id: string): void
+  REMOVE_ALL(): void
+  CLEAR_COMPLETED(): void
+}
+
+const {store, reducer} = createStore<State, Actions>()
 
 store.Todo = reducer({}, (on) => {
-  on.ADD_TODO((state) => (title) => {
-    const id = Date.now().toString(36).slice(2)
+  on.ADD_TODO((title) => (state) => {
+    const id = Date.now()
     state.Todo[id] = {id, title, completed: false}
   })
 
-  on.TOGGLE_TODO((state) => (id) => {
+  on.TOGGLE_TODO((id) => (state) => {
     state.Todo[id].completed = !state.Todo[id].completed
   })
 
-  on.REMOVE_TODO((state) => (id) => {
+  on.REMOVE_TODO((id) => (state) => {
     delete state.Todo[id]
   })
 
-  on.REMOVE_ALL((state) => () => {
+  on.REMOVE_ALL(() => (state) => {
     state.Todo = {}
   })
 
-  on.CLEAR_COMPLETED((state) => () => {
+  on.CLEAR_COMPLETED(() => (state) => {
     state.Query.todos.filter((todo) => todo.completed).forEach((todo) => delete state.Todo[todo.id])
   })
 })
