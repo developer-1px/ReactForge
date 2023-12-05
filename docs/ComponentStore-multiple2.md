@@ -25,28 +25,22 @@ interface TodoItem {
 }
 
 interface TodoItemActions {
-  TOGGLE(): void;
-  SET_TEXT(text: string): void;
+  TOGGLE(): void
+  SET_TEXT(text: string): void
 }
 
-const initTodo = {
-  text:"",
-  completed:false,
-}
-
-export const [TodoItemProvider, useTodoItemStore, createTodoItem] = createComponentStore<TodoItem, TodoItemActions>(({store, reducer}) => {
-
-  // 이렇게 만들어 볼까?
-  store.constructor = (id, params) => {
-    return {id, text:"", completed}  
-  }
+export const [TodoItemProvider, useTodoItemStore, createTodoItem] = createComponentStore<TodoItem, TodoItemActions>(({store, reducer, key}) => {
   
-  store.reducer(initTodo, (on) => {
-    on.TOGGLE(() => (state) => state.completed = !state.completed)
-    on.SET_TEXT((text) => (state) => state.text = text)
+  store.id = key 
+
+  store.text = reducer("", (on) => {
+    on.SET_TEXT((text) => (state) => (state.text = text))
   })
-  
-});
+
+  store.completed = reducer(false, (on) => {
+    on.TOGGLE(() => (state) => (state.completed = !state.completed))
+  })
+})
 ```
 
 
@@ -54,28 +48,24 @@ export const [TodoItemProvider, useTodoItemStore, createTodoItem] = createCompon
 2. **TodoListProvider:** Manages the state of the entire todo list.
 
 ```tsx
-import { createComponentStore } from 'componentstore';
+import {createComponentStore} from "componentstore"
 
 interface TodoList {
-  todos: TodoItem[];  // Array of todo item IDs
+  todos: TodoItem[] // Array of todo item IDs
 }
 
 interface TodoListActions {
-  ADD_TODO(id: string): void;
+  ADD_TODO(id: string): void
 }
 
 export const [TodoListProvider, useTodoListStore] = createComponentStore<TodoList, TodoListActions>(({store, reducer}) => {
-
   store.todos = reducer([], (on) => {
-    
-    on.ADD_TODO(id => (state) => {
-      /* create 기능을 TodoItem에 위임하고 싶다... */
-      const newTodo = createTodoItem(id, {id, text:"", completed:false})
-      state.push(newTodo)
+    on.ADD_TODO((id) => (state) => {
+      const newTodo = createTodoItem(id)
+      state.todos.push(newTodo)
     })
   })
-
-});
+})
 ```
 
 
@@ -137,7 +127,6 @@ export const [TodoListProvider, useTodoListStore] = createComponentStore<TodoLis
 - 추후에 디자인 변경에 따른 컴포넌트 구조 변경이 어려워짐.
 
 ```tsx
-
 interface TodoItem {
   id: string
   text: string
