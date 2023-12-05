@@ -51,7 +51,9 @@ export const [TodoItemProvider, useTodoItemStore, createTodoItem] = createCompon
 import {createComponentStore} from "componentstore"
 
 interface TodoList {
-  todos: TodoItem[] // Array of todo item IDs
+  todos: TodoItem[]
+  num_todos: number
+  num_completed_todos: number
 }
 
 interface TodoListActions {
@@ -59,12 +61,18 @@ interface TodoListActions {
 }
 
 export const [TodoListProvider, useTodoListStore] = createComponentStore<TodoList, TodoListActions>(({store, reducer}) => {
+  // reducer
   store.todos = reducer([], (on) => {
     on.ADD_TODO((id) => (state) => {
       const newTodo = createTodoItem(id)
       state.todos.push(newTodo)
     })
   })
+   
+  // computed value
+  store.num_todos = reducer((state) => state.todos.length)
+
+  store.num_completed_todos = reducer((state) => state.todos.filter(todo => todo.completed).length)
 })
 ```
 
