@@ -1,4 +1,4 @@
-# ComponentStore Library Documentation
+# ComponentStore 
 
 ## Overview
 
@@ -11,24 +11,9 @@ ComponentStore is a modern state management library for React, designed to offer
 - **Enhanced Reusability:** Components become more reusable and maintainable, as their state management is more self-contained.
 - **Flexible State Sharing:** Allows for flexible state sharing and interactions between different state contexts, making it suitable for complex state management scenarios.
 
-## Installation
-
-To install ComponentStore in your project, use npm or yarn:
-
-```bash
-npm install componentstore
-```
-
-or
-
-```bash
-yarn add componentstore
-```
-
 ## Usage
 
 ### Setting Up Providers
-
 
 1. **TodoItemProvider:** Manages the state of individual todo items.
 
@@ -148,58 +133,61 @@ export const [TodoListProvider, useTodoListStore] = createComponentStore<TodoLis
 
 ### 기존 방식의 Props Drilling 문제
 
+- Props를 생성하고 전달하고 특히 Props Type 지정이 너무 괴롭다.
+- 추후에 디자인 변경에 따른 컴포넌트 구조 변경이 어려워짐.
+
 ```tsx
+
+interface TodoItem {
+  id: string
+  text: string
+  completed: boolean
+}
+
 // TodoList 컴포넌트
 function TodoList() {
-  const [todos, setTodos] = useState([
-    { id: '1', text: 'Learn React', completed: false }
-  ]);
+  const [todos, setTodos] = useState([{id: "1", text: "Learn React", completed: false}])
 
-  const toggleTodo = (id) => {
+  const toggleTodo = (id: string) => {
     // 투두 아이템 상태 변경 로직
-  };
+  }
 
   return (
     <ul>
-      {todos.map(todo => (
-        <TodoItem
-          key={todo.id}
-          todo={todo}
-          onToggle={toggleTodo}
-        />
+      {todos.map((todo) => (
+        <TodoItem key={todo.id} todo={todo} onToggle={toggleTodo} />
       ))}
     </ul>
-  );
+  )
+}
+
+// TodoItem의 Props 타입
+type TodoItemProps = {
+   todo: TodoItem
+   onToggle: (id: string) => void
 }
 
 // TodoItem 컴포넌트
-function TodoItem({ todo, onToggle }) {
+function TodoItem({todo, onToggle}: TodoItemProps) {
   return (
     <li>
       <TodoText text={todo.text} />
-      <TodoCheckbox 
-        completed={todo.completed} 
-        onToggle={() => onToggle(todo.id)} 
-      />
+      <TodoCheckbox completed={todo.completed} onToggle={() => onToggle(todo.id)} />
     </li>
-  );
+  )
 }
 
 // TodoText 컴포넌트
-function TodoText({ text }) {
-  return <span>{text}</span>;
+function TodoText({text}: {text: string}) {
+  return <span>{text}</span>
 }
 
 // TodoCheckbox 컴포넌트
-function TodoCheckbox({ completed, onToggle }) {
-  return (
-    <input 
-      type="checkbox" 
-      checked={completed} 
-      onChange={onToggle} 
-    />
-  );
+function TodoCheckbox({completed, onToggle}: {completed: boolean; onToggle: () => void}) {
+  return <input type="checkbox" checked={completed} onChange={onToggle} />
 }
+
+export default TodoList
 ```
 
 ### ComponentStore를 사용한 해결 방법
@@ -208,51 +196,53 @@ function TodoCheckbox({ completed, onToggle }) {
 
 ```tsx
 // TodoItemStore 설정
-const [TodoItemProvider, useTodoItemStore] = createComponentStore<...>();
+const [TodoListProvider, useTodoListStore] = createComponentStore<...>(...)
+const [TodoItemProvider, useTodoItemStore] = createComponentStore<...>(...)
 
 // TodoList 컴포넌트
 function TodoList() {
-  const todos = ['1', '2', '3'];  // 예시용 ID 목록
+  const {todos, dispatch} = useTodoListStore()
+
+  const addTodo = (text) => {
+    const newId = generateUniqueId()
+    dispatch.ADD_TODO(newId)
+  }
 
   return (
-    <ul>
-      {todos.map(id => (
-        <TodoItemProvider key={id} id={id}>
-          <TodoItem />
-        </TodoItemProvider>
-      ))}
-    </ul>
-  );
+    <TodoListProvider>
+      <input type="text" onKeyPress={(e) => e.key === "Enter" && addTodo(e.target.value)} />
+      <ul>
+        {todos.map((id) => (
+          <TodoItemProvider key={id} id={id}>
+            <TodoItem />
+          </TodoItemProvider>
+        ))}
+      </ul>
+    </TodoListProvider>
+  )
 }
 
 // TodoItem 컴포넌트
 function TodoItem() {
-  const { todo, toggleTodo } = useTodoItemStore();
-
   return (
     <li>
       <TodoText />
       <TodoCheckbox />
     </li>
-  );
+  )
 }
 
 // TodoText 컴포넌트
 function TodoText() {
-  const { text } = useTodoItemStore();
-  return <span>{text}</span>;
+  const {text} = useTodoItemStore()
+  return <span>{text}</span>
 }
 
 // TodoCheckbox 컴포넌트
 function TodoCheckbox() {
-  const { completed, toggleTodo } = useTodoItemStore();
-  return (
-    <input 
-      type="checkbox" 
-      checked={completed} 
-      onChange={toggleTodo} 
-    />
-  );
+  const {completed, dispatch} = useTodoItemStore()
+  const toggleTodo = dispatch.TOGGLE_TODO()
+  return <input type="checkbox" checked={completed} onChange={toggleTodo} />
 }
 ```
 
