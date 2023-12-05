@@ -1,5 +1,5 @@
 import {createPathProxy, getValueFromPath, ReflectGet, ReflectSet} from "./createPathProxy.ts"
-import {useEffect, useRef, useState} from "react"
+import {createContext, createElement, ReactNode, useContext, useEffect, useRef, useState} from "react"
 
 const isObject = (obj: unknown): obj is object => Object(obj) === obj
 
@@ -363,7 +363,7 @@ interface Builder<State, Actions> {
 
 //
 //
-// --- Store
+// --- Store.md
 export const createStore = <State extends object, Actions = null>(
   init: (builder: Builder<State, Actions>) => void,
   options = tmpOption
@@ -389,6 +389,7 @@ export const createStore = <State extends object, Actions = null>(
   // Effect
   const effectMap = Object.create(null)
   const effectRunner = []
+
   const effect: EffectFn<State, Actions> = (desc: string, fn) => {
     // @TODO: 실행을 한 타이밍 늦게 할 수 있어야 한다.
 
@@ -470,7 +471,7 @@ export const createStore = <State extends object, Actions = null>(
   // --- React
   const useStore = (name: string = "") => {
     const [state, deps] = createState(name)
-    const [version, setVersionsion] = useState(0)
+    const [version, setVersion] = useState(0)
     const isUnsubscribed = useRef(false)
 
     const unsubscribe = subscribeStateMutation((target, path, prop) => {
@@ -480,7 +481,7 @@ export const createStore = <State extends object, Actions = null>(
       if (deps.has(pathString)) {
         unsubscribe()
         isUnsubscribed.current = true
-        setVersionsion(version + 1)
+        setVersion(version + 1)
       }
     })
 
@@ -504,9 +505,22 @@ export const createStore = <State extends object, Actions = null>(
   return useStore
 }
 
-export const createComponentStore = <State extends object, Actions, Store>(init: (builder: Builder<State, Actions>) => void) => {
-  const useStore = createStore<State, Actions>(init)
+export const createComponentStore = <Store, State extends object, Actions>(
+  init: (builder: Builder<State, Actions>) => void,
+  key: keyof Store
+) => {
+  const ComponentStoreContext = createContext<string | number>("")
 
-  const useStoreProvider = (props) => props.children
-  return [useStoreProvider, useStore] as const
+  const memo = Object.create(null)
+
+  const useComponentStore = (...args) => {
+    const id = useContext(ComponentStoreContext)
+    const useStore = memo[id] ?? (memo[id] = createStore<State, Actions>(init))
+    return useStore(...args)
+  }
+
+  const ComponentStoreProvider = (props: {id: string | number; children: ReactNode}) =>
+    createElement(ComponentStoreContext.Provider, {value: props.id}, props.children)
+
+  return [ComponentStoreProvider, useComponentStore] as const
 }

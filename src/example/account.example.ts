@@ -27,71 +27,54 @@ interface Actions {
   계정정보_동기화(user: User): void
 }
 
-const {store, reducer} = createStore<State, Actions>()
-
-store.account = reducer(null, (on, effect) => {
+export default createStore<State, Actions>(({store, reducer}) => {
   //
-  on.API_FETCH_CALENDAR_LIST_SUCCESS((calendarList) => (state) => {
-    if (state.account) return
-
-    const id = calendarList.find((c) => c.primary)?.kakaoworkUserId
-    if (!id) return
-
-    state.account = {
-      id,
-      email: "",
-      display_name: "",
-      avatar_url: "",
-      space_id: "",
-    }
-  })
-
-  on.계정정보조회하기_SUCCESS((account) => (state) => (state.account = account))
-
-  on.계정정보_동기화((user) => (state) => {
-    if (!state.account) {
-      return
-    }
-    state.account.display_name = user.display_name
-    state.account.avatar_url = user.avatar_url
-    state.account.space_id = user.space_id
-  })
-
-  effect("유저정보가 갱신되면 Account에도 동기화하기", (track) => (state, dispatch) => {
-    const accountId = track((state) => state.account?.id)
-    if (!accountId) {
-      return
-    }
-
-    const user = track((state) => state.User[accountId])
-    if (!user) {
-      return
-    }
-
-    // runInAction??
-    dispatch((state) => {
+  store.account = reducer(
+    (state) => {
       if (!state.account) {
-        return
+        return null
       }
-      state.account.display_name = user.display_name
-      state.account.avatar_url = user.avatar_url
-      state.account.space_id = user.space_id
-    })
 
-    dispatch.계정정보_동기화(user)
+      const user = state.User[state.account.id]
+      if (user) {
+        state.account.display_name = user.display_name
+        state.account.avatar_url = user.avatar_url
+      }
+
+      return state.account
+    },
+    (on) => {
+      //
+      on.API_FETCH_CALENDAR_LIST_SUCCESS((calendarList) => (state) => {
+        if (state.account) return
+
+        const id = calendarList.find((c) => c.primary)?.kakaoworkUserId
+        if (!id) return
+
+        state.account = {
+          id,
+          email: "",
+          display_name: "",
+          avatar_url: "",
+          space_id: "",
+        }
+      })
+
+      on.계정정보조회하기_SUCCESS((account) => (state) => (state.account = account))
+    }
+  )
+
+  store.타_그룹사인가 = reducer((state) => (userId: string) => {
+    const account = state.account
+    if (!account) return false
+
+    const space_id = state.User[userId]?.space_id
+    if (!space_id) {
+      return false
+    }
+
+    return space_id !== account.space_id
   })
+
+  store.그룹사_기능_사용중인가 = reducer((state) => !!state.account?.grid?.id)
 })
-
-store.타_그룹사인가 = reducer((state) => (userId: string) => {
-  const account = state.account
-  if (!account) return false
-
-  const space_id = state.User[userId]?.space_id
-  if (!space_id) {
-    return false
-  }
-
-  return space_id !== account.space_id
-})
-
-store.그룹사_기능_사용중인가 = reducer((state) => !!state.account?.grid?.id)

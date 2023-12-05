@@ -55,14 +55,6 @@ function Layout() {
   )
 }
 
-function Home() {
-  return (
-    <div>
-      <h2>Home</h2>
-    </div>
-  )
-}
-
 function Dashboard() {
   return (
     <div>

@@ -22,7 +22,7 @@ interface Actions {
 ```
 
 ```ts
-// Store
+// Store.md
 export const useStore = createStore<State, Actions>(({store, reducer}) => {
 
   // Reducer

@@ -28,7 +28,7 @@ describe("proxy", () => {
   const [state] = createState("root")
   const [state2] = createState("root2")
 
-  it("Store, State, Computed", () => {
+  it("Store.md, State, Computed", () => {
     // Store는 undefined라도 path를 어떻게든 설정할 수 있다.
     store.foo.bar = 200
 

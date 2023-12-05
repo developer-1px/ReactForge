@@ -1,4 +1,4 @@
-import {createComponentStore, createStore} from "../test/createStore.ts"
+import {createComponentStore} from "../test/createStore.ts"
 
 interface CounterState {
   count: number
@@ -15,7 +15,7 @@ interface App {
   counter: Record<string, CounterState>
 }
 
-const [CounterProvider, useCounterComponentStore] = createComponentStore<CounterState, CounterActions, App>(({store, reducer}) => {
+const [CounterProvider, useCounterComponentStore] = createComponentStore<App, CounterState, CounterActions>(({store, reducer}) => {
   store.count = reducer(0, (on) => {
     on.INCREASE((by) => (state) => (state.count += by))
     on.DECREASE((by) => (state) => (state.count -= by))
@@ -23,10 +23,11 @@ const [CounterProvider, useCounterComponentStore] = createComponentStore<Counter
   })
 
   store.doubledCount = reducer((state) => state.count * 2)
-})
+}, "counter")
 
 function Counter() {
   console.log("Counter1: re-render")
+
   const {count, doubledCount} = useCounterComponentStore()
 
   return (
@@ -74,7 +75,13 @@ export default function CounterStoreApp() {
         <Counter />
       </CounterProvider>
 
-      <CounterProvider id="1">
+      <hr />
+
+      <CounterProvider id="2">
+        <Counter />
+      </CounterProvider>
+
+      <CounterProvider id="2">
         <Counter />
       </CounterProvider>
     </div>
