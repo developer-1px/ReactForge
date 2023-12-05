@@ -94,8 +94,8 @@ function TodoList() {
     <>
       <input type="text" onKeyPress={(e) => e.key === "Enter" && addTodo(e.target.value)} />
       <ul>
-        {todos.map((id) => (
-          <TodoItemProvider key={id} id={id}>
+        {todos.map((todo) => (
+          <TodoItemProvider key={todo.id}>
             <TodoItem />
           </TodoItemProvider>
         ))}
@@ -199,6 +199,15 @@ export default TodoList
 const [TodoListProvider, useTodoListStore] = createComponentStore<...>(...)
 const [TodoItemProvider, useTodoItemStore] = createComponentStore<...>(...)
 
+/* 단일로 쓸거라면 TodoListProvider가 꼭 필요할까?? 하나라면 없어도 되는 방향도 검토해보자... */
+function App() {
+  return (
+    <TodoListProvider>
+      <TodoList />
+    </TodoListProvider>
+  )
+}
+
 // TodoList 컴포넌트
 function TodoList() {
   const {todos, dispatch} = useTodoListStore()
@@ -209,7 +218,7 @@ function TodoList() {
   }
 
   return (
-    <TodoListProvider>
+    <>
       <input type="text" onKeyPress={(e) => e.key === "Enter" && addTodo(e.target.value)} />
       <ul>
         {todos.map((id) => (
@@ -218,7 +227,7 @@ function TodoList() {
           </TodoItemProvider>
         ))}
       </ul>
-    </TodoListProvider>
+    </>
   )
 }
 
@@ -249,8 +258,10 @@ function TodoCheckbox() {
 이 예제에서 `ComponentStore`를 사용하면 `TodoItem` 내부의 `TodoText`와 `TodoCheckbox` 컴포넌트가 상위 컴포넌트로부터 직접 `props`를 전달받지 않고도 필요한 상태에 접근할 수 있습니다. 이로 인해 `Props Drilling` 문제가 해결되고, 컴포넌트 구조가 더 간결하고 유지보수하기 쉬워집니다.
 
 
+
 ---
 
+> /* 단일로 쓸거라면 TodoListProvider가 꼭 필요할까?? 하나라면 없어도 되는 방향도 검토해보자... */
 
 
 ## Key Advantages
