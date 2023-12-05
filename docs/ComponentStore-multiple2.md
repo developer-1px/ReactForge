@@ -81,50 +81,53 @@ export const [TodoListProvider, useTodoListStore] = createComponentStore<TodoLis
 
 1. **TodoList Component:** Uses `TodoListProvider` to manage the list.
 
-   ```tsx
-   function TodoList() {
-     const { todos, dispatch } = useTodoListStore();
+```tsx
+function TodoList() {
+  const {todos, dispatch} = useTodoListStore()
 
-     const addTodo = (text) => {
-       const newId = generateUniqueId();
-       dispatch.ADD_TODO(newId);
-     };
+  const addTodo = (text) => {
+    const newId = generateUniqueId()
+    dispatch.ADD_TODO(newId)
+  }
 
-     return (
-       <TodoListProvider>
-         <input type="text" onKeyPress={(e) => e.key === 'Enter' && addTodo(e.target.value)} />
-         <ul>
-           {todos.map(id => (
-             <TodoItemProvider key={id} id={id}>
-               <TodoItem />
-             </TodoItemProvider>
-           ))}
-         </ul>
-       </TodoListProvider>
-     );
-   }
-   ```
+  return (
+    <>
+      <input type="text" onKeyPress={(e) => e.key === "Enter" && addTodo(e.target.value)} />
+      <ul>
+        {todos.map((id) => (
+          <TodoItemProvider key={id} id={id}>
+            <TodoItem />
+          </TodoItemProvider>
+        ))}
+      </ul>
+    </>
+  )
+}
+
+function App() {
+  return (
+    <TodoListProvider>
+      <TodoList />
+    </TodoListProvider>
+  )
+}
+```
 
 2. **TodoItem Component:** Manages its own state using `TodoItemProvider`.
 
-   ```tsx
-   function TodoItem() {
-     const { text, completed, dispatch } = useTodoItemStore();
+```tsx
+function TodoItem() {
+  const {text, completed, dispatch} = useTodoItemStore()
 
-     const toggleTodo = () => {
-       dispatch.TOGGLE();
-     };
+  const toggleTodo = () => dispatch.TOGGLE()
 
-     return (
-       <li
-         style={{ textDecoration: completed ? 'line-through' : 'none' }}
-         onClick={toggleTodo}
-       >
-         {text}
-       </li>
-     );
-   }
-   ```
+  return (
+    <li style={{textDecoration: completed ? "line-through" : "none"}} onClick={toggleTodo}>
+      {text}
+    </li>
+  )
+}
+```
 
 ---
 /* 여기에 TodoItem의 컴포넌트가 복잡해지면서 기존에는 props-drill이 발생하지만 여기에서는 그렇지 않다는 것을 통해서 뷰 변경의 자유로움을 보여주는 내용과 예시를 추가하자 */

@@ -1,18 +1,11 @@
-import {createComponentStore} from "componentstore"
+function TodoItem() {
+  const {text, completed, dispatch} = useTodoItemStore()
 
-interface TodoList {
-  todos: TodoItem[] // Array of todo item IDs
+  const toggleTodo = () => dispatch.TOGGLE()
+
+  return (
+    <li style={{textDecoration: completed ? "line-through" : "none"}} onClick={toggleTodo}>
+      {text}
+    </li>
+  )
 }
-
-interface TodoListActions {
-  ADD_TODO(id: string): void
-}
-
-export const [TodoListProvider, useTodoListStore] = createComponentStore<TodoList, TodoListActions>(({store, reducer}) => {
-  store.todos = reducer([], (on) => {
-    on.ADD_TODO((id) => (state) => {
-      const newTodo = createTodoItem(id)
-      state.todos.push(newTodo)
-    })
-  })
-})
