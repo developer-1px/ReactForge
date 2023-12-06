@@ -15,30 +15,30 @@ ComponentStore is a modern state management library for React, designed to offer
 
 ### Setting Up Providers
 
-1. **TodoItemProvider:** Manages the state of individual todo items.
+1. **TodoProvider:** Manages the state of individual todo items.
 
 ```tsx
-interface TodoItem {
+interface Todo {
   id: string;
   text: string;
   completed: boolean;
 }
 
-interface TodoItemActions {
+interface TodoActions {
   TOGGLE(): void
   SET_TEXT(text: string): void
 }
 
-export const [TodoItemProvider, useTodoItemStore, createTodoItem] = createComponentStore<TodoItem, TodoItemActions>(({store, reducer, key}) => {
+export const [useTodoStore, TodoProvider, createTodo] = createComponentStore<Todo, TodoActions>(({store:Todo, reducer, key}) => {
   
-  store.id = key 
+  Todo.id = key 
 
-  store.text = reducer("", (on) => {
-    on.SET_TEXT((text) => (state) => (state.text = text))
+  Todo.text = reducer("", (on) => {
+    on.SET_TEXT((text) => (todo) => (todo.text = text))
   })
 
-  store.completed = reducer(false, (on) => {
-    on.TOGGLE(() => (state) => (state.completed = !state.completed))
+  Todo.completed = reducer(false, (on) => {
+    on.TOGGLE(() => (todo) => (todo.completed = !todo.completed))
   })
 })
 ```
@@ -64,7 +64,7 @@ export const [TodoListProvider, useTodoListStore] = createComponentStore<TodoLis
   // reducer
   store.todos = reducer([], (on) => {
     on.ADD_TODO((id) => (state) => {
-      const newTodo = createTodoItem(id)
+      const newTodo = createTodo(id)
       state.todos.push(newTodo)
     })
   })
@@ -95,9 +95,9 @@ function TodoList() {
       <input type="text" onKeyPress={(e) => e.key === "Enter" && addTodo(e.target.value)} />
       <ul>
         {todos.map((todo) => (
-          <TodoItemProvider key={todo.id}>
+          <TodoProvider key={todo.id}>
             <TodoItem />
-          </TodoItemProvider>
+          </TodoProvider>
         ))}
       </ul>
     </>
@@ -113,11 +113,11 @@ function App() {
 }
 ```
 
-2. **TodoItem Component:** Manages its own state using `TodoItemProvider`.
+2. **TodoItem Component:** Manages its own state using `TodoProvider`.
 
 ```tsx
 function TodoItem() {
-  const {text, completed, dispatch} = useTodoItemStore()
+  const {text, completed, dispatch} = useTodoStore()
 
   const toggleTodo = () => dispatch.TOGGLE()
 
@@ -197,7 +197,7 @@ export default TodoList
 ```tsx
 // TodoItemStore 설정
 const [TodoListProvider, useTodoListStore] = createComponentStore<...>(...)
-const [TodoItemProvider, useTodoItemStore] = createComponentStore<...>(...)
+const [TodoProvider, useTodoStore] = createComponentStore<...>(...)
 
 /* 단일로 쓸거라면 TodoListProvider가 꼭 필요할까?? 하나라면 없어도 되는 방향도 검토해보자... */
 function App() {
@@ -222,9 +222,9 @@ function TodoList() {
       <input type="text" onKeyPress={(e) => e.key === "Enter" && addTodo(e.target.value)} />
       <ul>
         {todos.map((id) => (
-          <TodoItemProvider key={id} id={id}>
+          <TodoProvider key={id} id={id}>
             <TodoItem />
-          </TodoItemProvider>
+          </TodoProvider>
         ))}
       </ul>
     </>
@@ -243,13 +243,13 @@ function TodoItem() {
 
 // TodoText 컴포넌트
 function TodoText() {
-  const {text} = useTodoItemStore()
+  const {text} = useTodoStore()
   return <span>{text}</span>
 }
 
 // TodoCheckbox 컴포넌트
 function TodoCheckbox() {
-  const {completed, dispatch} = useTodoItemStore()
+  const {completed, dispatch} = useTodoStore()
   const toggleTodo = dispatch.TOGGLE_TODO()
   return <input type="checkbox" checked={completed} onChange={toggleTodo} />
 }

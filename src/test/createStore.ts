@@ -5,8 +5,6 @@ const isObject = (obj: unknown): obj is object => Object(obj) === obj
 
 const isPrimitive = (value: unknown): value is boolean | number | string | symbol => Object(value) !== value
 
-const valueOf = <T>(value: T) => (typeof value?.valueOf === "function" ? value.valueOf() : value)
-
 const makePathString = (path: string[], prop: string) => [...path, prop].join(".")
 
 const traverseObject = <T extends object>(
@@ -289,10 +287,12 @@ const createComputed = <State extends object, T>($store: State, $state: State, c
   })
 
   const getValue = (): T | undefined => {
+    console.warn({lastVersion, version})
     if (lastVersion !== version) {
       value = computedFn(state)
       lastVersion = version
     }
+    console.warn({value})
     return value
   }
 
@@ -356,6 +356,8 @@ const tmpOption = {
 
 type ReducerFactoryFn<State, Actions> = <T, R extends T>(init: Init<State, T>, fn?: ReducerFn<State, Actions>) => R
 
+type UseStore<State, Actions> = Readonly<State> & {dispatch: Dispatch<Actions>}
+
 interface Builder<State, Actions> {
   store: State
   reducer: ReducerFactoryFn<State, Actions>
@@ -364,10 +366,7 @@ interface Builder<State, Actions> {
 //
 //
 // --- Store.md
-export const createStore = <State extends object, Actions = null>(
-  init: (builder: Builder<State, Actions>) => void,
-  options = tmpOption
-) => {
+export const createStorePart = <State extends object, Actions = null>(options = tmpOption) => {
   const noop = () => {}
 
   const defaultOptions = {}
@@ -474,6 +473,8 @@ export const createStore = <State extends object, Actions = null>(
     const [version, setVersion] = useState(0)
     const isUnsubscribed = useRef(false)
 
+    console.warn({name, state})
+
     const unsubscribe = subscribeStateMutation((target, path, prop) => {
       if (state.valueOf() !== target) return
 
@@ -496,22 +497,26 @@ export const createStore = <State extends object, Actions = null>(
 
     // @TODO: state에 직접 입력하는 방식이 아니라 proxy에서 get를 하자!
     state.dispatch = dispatch
-    return state as Readonly<State> & {dispatch: Dispatch<Actions>}
+    return state as UseStore<State, Actions>
   }
 
-  init({store, reducer})
+  return {store, reducer, useStore, createState, dispatch, $store, $state}
+}
 
-  // {createState, dispatch, , $store, $state}
+export const createStore = <State extends object, Actions = null>(
+  init: (builder: Builder<State, Actions>) => void,
+  options = tmpOption
+) => {
+  const {store, reducer, useStore} = createStorePart<State, Actions>(options)
+
+  init({store, reducer})
   return useStore
 }
 
-export const createComponentStore = <Store, State extends object, Actions>(
-  init: (builder: Builder<State, Actions>) => void,
-  key: keyof Store
-) => {
+export const createComponentStore = <State extends object, Actions>(init: (builder: Builder<State, Actions>) => void) => {
   const ComponentStoreContext = createContext<string | number>("")
 
-  const memo = Object.create(null)
+  const memo = Object.create(null) as Record<string, () => UseStore<State, Actions>>
 
   const useComponentStore = (...args) => {
     const id = useContext(ComponentStoreContext)
@@ -522,5 +527,5 @@ export const createComponentStore = <Store, State extends object, Actions>(
   const ComponentStoreProvider = (props: {id: string | number; children: ReactNode}) =>
     createElement(ComponentStoreContext.Provider, {value: props.id}, props.children)
 
-  return [ComponentStoreProvider, useComponentStore] as const
+  return [useComponentStore, ComponentStoreProvider] as const
 }

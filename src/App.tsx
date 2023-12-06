@@ -1,7 +1,8 @@
-import {Routes, Route, Outlet, Link} from "react-router-dom"
+import {Link, Outlet, Route, Routes} from "react-router-dom"
 import CounterApp from "./routes/Counter.tsx"
 import "./App.css"
 import CounterStoreApp from "./routes/CounterMulti.tsx"
+import TodoList from "./routes/TodoList.tsx"
 
 export default function App() {
   return (
@@ -10,7 +11,7 @@ export default function App() {
         <Route path="/" element={<Layout />}>
           <Route index element={<CounterApp />} />
           <Route path="counterStore" element={<CounterStoreApp />} />
-          <Route path="dashboard" element={<Dashboard />} />
+          <Route path="todoList" element={<TodoList />} />
           <Route path="*" element={<NoMatch />} />
         </Route>
       </Routes>
@@ -32,7 +33,7 @@ function Layout() {
             <Link to="/counterStore">counterStore</Link>
           </li>
           <li>
-            <Link to="/dashboard">Dashboard</Link>
+            <Link to="/todoList">TodoList</Link>
           </li>
           <li>
             <Link to="/nothing-here">Nothing Here</Link>

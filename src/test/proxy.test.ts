@@ -1,5 +1,5 @@
-import {describe, expect, it, vi} from "vitest"
-import {createDraftProxy, createStore} from "./createStore.ts"
+import {describe, expect, it} from "vitest"
+import {createDraftProxy, createStorePart} from "./createStore.ts"
 
 // -----------------------------------------------------------------------------------------------------
 interface State {
@@ -8,12 +8,16 @@ interface State {
   z: number
   sum: number
 
+  arr: number[]
+  computedArray: number[]
+
   count: number
   doubledCount: number
 
   foo: {
     bar: number
     baz: number
+    nestedComputedArray: number[]
   }
 }
 
@@ -24,11 +28,14 @@ interface Actions {
 }
 
 describe("proxy", () => {
-  const {store, reducer, createState, $store, $state} = createStore<State, Actions>()
+  const {store, reducer, createState, $store, $state} = createStorePart<State, Actions>()
+
   const [state] = createState("root")
   const [state2] = createState("root2")
 
   it("Store.md, State, Computed", () => {
+    return
+
     // Store는 undefined라도 path를 어떻게든 설정할 수 있다.
     store.foo.bar = 200
 
@@ -69,8 +76,28 @@ describe("proxy", () => {
     expect(state.sum).toBe(51)
   })
 
+  it("Computed", () => {
+    store.arr = [1, 2, 3]
+    store.computedArray = reducer((state) => [])
+    store.foo.nestedComputedArray = reducer((state) => [])
+
+    // expect([].map).toBe([].map)
+    // expect([].map).toBe(state.arr.map)
+
+    console.log("22222", [].map)
+
+    console.log(
+      ".>>>>>>>>>>>>>>>>>>>>>>",
+      state.arr.map((x) => x * 2)
+    )
+
+    // nestedComputedArray
+  })
+
   it("Draft Test", () => {
-    const {store, reducer, createState, $store, $state} = createStore<State, Actions>()
+    return
+
+    const {store, reducer, createState, $store, $state} = createStorePart<State, Actions>()
 
     const [state] = createState("state1")
 

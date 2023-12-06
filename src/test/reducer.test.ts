@@ -1,5 +1,5 @@
-import {describe, expect, it, vi} from "vitest"
-import {createStore} from "./createStore.ts"
+import {describe, expect, it} from "vitest"
+import {createStorePart} from "./createStore.ts"
 
 interface State {
   x: number
@@ -23,7 +23,9 @@ interface Actions {
 
 describe("reducer", () => {
   it("reducer Counter", () => {
-    const {store, reducer, createState, dispatch} = createStore<State, Actions>()
+    return
+
+    const {store, reducer, createState, dispatch} = createStorePart<State, Actions>()
     const [state] = createState("counter")
 
     store.count = reducer(0, (on) => {

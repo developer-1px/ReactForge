@@ -11,11 +11,7 @@ interface CounterActions {
   RESET(): void
 }
 
-interface App {
-  counter: Record<string, CounterState>
-}
-
-const [CounterProvider, useCounterComponentStore] = createComponentStore<App, CounterState, CounterActions>(({store, reducer}) => {
+const [useCounterComponentStore, CounterProvider] = createComponentStore<CounterState, CounterActions>(({store, reducer}) => {
   store.count = reducer(0, (on) => {
     on.INCREASE((by) => (state) => (state.count += by))
     on.DECREASE((by) => (state) => (state.count -= by))
@@ -23,7 +19,7 @@ const [CounterProvider, useCounterComponentStore] = createComponentStore<App, Co
   })
 
   store.doubledCount = reducer((state) => state.count * 2)
-}, "counter")
+})
 
 function Counter() {
   console.log("Counter1: re-render")
@@ -71,9 +67,8 @@ export default function CounterStoreApp() {
     <div>
       <h1>ComponentStore</h1>
 
-      <CounterProvider id="1">
-        <Counter />
-      </CounterProvider>
+      <Counter />
+      <Counter />
 
       <hr />
 
@@ -82,6 +77,12 @@ export default function CounterStoreApp() {
       </CounterProvider>
 
       <CounterProvider id="2">
+        <Counter />
+      </CounterProvider>
+
+      <hr />
+
+      <CounterProvider id="3">
         <Counter />
       </CounterProvider>
     </div>
