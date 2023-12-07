@@ -1,4 +1,4 @@
-import {createStore} from "../test/createStore.ts"
+import {createStore} from "../test/newStore.ts"
 
 interface Actions {
   PUSH_LETTER(key: string): void

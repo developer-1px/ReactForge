@@ -1,5 +1,5 @@
 import {createStore} from "../test/newStore.ts"
-import {memo, useState} from "react"
+import {memo} from "react"
 
 interface State {
   count: number

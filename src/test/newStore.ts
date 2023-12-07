@@ -1,4 +1,4 @@
-import {useEffect, useMemo, useRef, useState} from "react"
+import {createContext, createElement, Key, ReactNode, useContext, useEffect, useState} from "react"
 
 export const isObject = (target: unknown): target is object => Object(target) === target
 
@@ -26,16 +26,20 @@ const registerPrototype = (target: object) => {
 }
 
 // createStoreProxy(): 상태 관리를 위한 Proxy를 생성합니다. 상태 객체의 속성 접근과 변경을 감시하며, Reducer를 통해 계산된 값을 관리합니다.
+
+// @FIXME: computed value를 Object geterr와 Proxy get trap에서 둘다 쓰고 있다. 하나는 필요없다.
+// @FIXME: 항상 계산하는 게 아니라 관련 데이터가 업데이트 되었을때에만 갱신하는 방식을 구현하자!
+
 function createStoreProxy<State extends object>(obj: State | object, root: State): State {
   return createCachedProxy(obj, {
     get(target, prop, receiver) {
       // Reducer: Computed Value 처리
-      const reducer = Object.getPrototypeOf(target)[prop]
-      if (reducer instanceof Reducer && reducer.computed) {
-        const state = createStoreProxy(root, root)
-        const result = reducer.computed(state)
-        return createStoreProxy(result, root)
-      }
+      // const reducer = Object.getPrototypeOf(target)[prop]
+      // if (reducer instanceof Reducer && reducer.computed) {
+      //   const state = createStoreProxy(root, root)
+      //   const result = reducer.computed(state)
+      //   return createStoreProxy(result, root)
+      // }
 
       const result = Reflect.get(target, prop, receiver)
       return createStoreProxy(result, root)
@@ -45,6 +49,16 @@ function createStoreProxy<State extends object>(obj: State | object, root: State
     // store.val = value
     // store.count = reducer(0, {...})
     set(target, prop, value, receiver) {
+      const currentValue = Reflect.get(target, prop, receiver)
+      if (Object.is(currentValue, value)) {
+        return true
+      }
+
+      // version up!
+      const proto = registerPrototype(target)
+      proto[VERSION] = proto[VERSION] || {}
+      proto[VERSION][prop] = (proto[VERSION][prop] || 0) + 1
+
       // set reducer
       if (value instanceof Reducer) {
         // register Reducer
@@ -55,22 +69,23 @@ function createStoreProxy<State extends object>(obj: State | object, root: State
         // Computed Getter
         if (reducer.computed) {
           const state = createStoreProxy(root, root)
-          Object.defineProperty(proto, prop, {get: () => reducer.computed(state)})
+          Object.defineProperty(proto, prop, {
+            get: () => {
+              const computedValue = reducer.computed(state)
+              // Reflect.set(target, prop, computedValue, receiver)
+              return computedValue
+            },
+          })
           return true
         }
 
         // init Reducer value
-        return Reflect.set(target, prop, reducer.value, receiver)
-      }
-
-      const currentValue = Reflect.get(target, prop, receiver)
-      if (Object.is(currentValue, value)) {
+        if (currentValue === undefined) {
+          return Reflect.set(target, prop, reducer.value, receiver)
+        }
         return true
       }
 
-      const proto = registerPrototype(target)
-      proto[VERSION] = proto[VERSION] || {}
-      proto[VERSION][prop] = (proto[VERSION][prop] || 0) + 1
       return Reflect.set(target, prop, value, receiver)
     },
   }) as State
@@ -147,10 +162,9 @@ const compareSnapshotKey = (obj1: Record<string, unknown>, obj2: Record<string, 
   return true
 }
 
-function createSnapshot<State extends object>(store: State) {
-  const marked = new Map<Record<string, number>, Record<string, number>>()
-
-  const snapshot = new Proxy(store, {
+const createSnapshotPath = (obj: object, marked): object => {
+  if (!isProxiable(obj)) return obj
+  return new Proxy(obj, {
     get(target, prop, receiver) {
       const proto = Object.getPrototypeOf(target)
       const versionMap = proto[VERSION]
@@ -159,15 +173,22 @@ function createSnapshot<State extends object>(store: State) {
         lastVersions[prop] = versionMap[prop]
         marked.set(versionMap, lastVersions)
       }
-      return Reflect.get(target, prop, receiver)
+
+      const result = Reflect.get(target, prop, receiver)
+      return createSnapshotPath(result, marked)
     },
-  }) as State
+  }) as object
+}
+
+function createSnapshot<State extends object>(store: State) {
+  const marked = new Map<Record<string, number>, Record<string, number>>()
+  const snapshot = createSnapshotPath(store, marked)
 
   const callBackSet = new Set()
 
   const handler = (...args) => {
     // once!!
-    console.log("subscribeMutation", ...args, callBackSet)
+    console.log("subscribeMutation", ...args, marked)
 
     for (const [key, snapshotKeys] of marked) {
       console.log("check!!", key, snapshotKeys)
@@ -268,6 +289,8 @@ function createDispatch<State extends object, Actions>(store: State, options) {
   options = {...defaultOptions, ...options}
   const middleware = options.middleware
 
+  console.warn({middleware})
+
   const dispatchAction = (type: string, payload: unknown[]) => {
     const stateChanges = {}
 
@@ -292,6 +315,9 @@ function createDispatch<State extends object, Actions>(store: State, options) {
     get(_, type: string) {
       return (...payload: unknown[]) => {
         const action = {type, payload}
+
+        console.warn("dispatch", {action})
+
         middleware({dispatch, getState: () => store})(next)(action)
       }
     },
@@ -313,22 +339,43 @@ type UseStore<State, Actions> = Readonly<State> & {dispatch: Dispatch<Actions>}
 
 const useStoreFactory = <State extends object, Actions>(store: State, dispatch: Dispatch<Actions>) => {
   const [, setVersion] = useState(0)
-  const [state, subscribe] = createSnapshot(store)
+  const [state, subscribe] = createSnapshot(store, dispatch)
   useEffect(() => subscribe(() => setVersion((version) => version + 1)), [subscribe])
-
-  // @TODO: state에 직접 입력하는 방식이 아니라 proxy에서 get를 하자!
-  state.dispatch = dispatch
   return state as UseStore<State, Actions>
 }
 
+//
+//
+// createStorePart
+// -----------------------------------------------------------------------------------------------
+
+const logger = (api) => (next) => (action) => {
+  // const {type, payload} = action
+  // console.group(type + "(", ...payload, ")")
+  // console.groupCollapsed("(callstack)")
+  // console.trace("")
+  // console.groupEnd()
+  next(action)
+  // console.log(api.getState())
+  // console.groupEnd()
+}
+
+const tmpOption = {
+  middleware: logger,
+}
+
 export function createStorePart<State extends object, Actions>(options = {}) {
-  const state: State = {} as State
+  options = {...tmpOption, ...options}
+
+  const state: State = (options.initValue ?? {}) as State
 
   const store = createStoreProxy<State>(state, state)
+  const proto = registerPrototype(store)
 
   const reducer = <T, R extends T>(init: Init<State, T>, fn: ReducerFn<State, Actions> = noop): R => new Reducer(init, fn) as R
 
   const dispatch = createDispatch<State, Actions>(store, options)
+  proto.dispatch = dispatch
 
   const snapshot = () => createSnapshot<State>(store)
 
@@ -348,24 +395,40 @@ interface Builder<State, Actions> {
   reducer: ReducerFactoryFn<State, Actions>
 }
 
-const logger = (api) => (next) => (action) => {
-  const {type, payload} = action
-  console.group(type + "(", ...payload, ")")
-  // console.groupCollapsed("(callstack)")
-  // console.trace("")
-  // console.groupEnd()
-  next(action)
-  console.log(api.getState())
-  console.groupEnd()
-}
-
-const tmpOption = {
-  middleware: logger,
-}
-
 export function createStore<State extends object, Actions = null>(init: (builder: Builder<State, Actions>) => void, options = tmpOption) {
   const {store, reducer, useStore} = createStorePart<State, Actions>(options)
 
   init({store, reducer})
   return useStore
+}
+
+//
+//
+// createComponentStore
+// ------------------------------------------------------------------------------------------
+export function createComponentStore<State extends object, Actions>(
+  init: (builder: Builder<State, Actions>) => void,
+  repogitory: Record<PropertyKey, State> = {}
+) {
+  const ComponentStoreContext = createContext<string | number>("")
+
+  const memo = Object.create(null) as Record<string, () => UseStore<State, Actions>>
+
+  const useComponentStore = (...args) => {
+    const id = useContext(ComponentStoreContext)
+
+    // @FIXME!!
+    repogitory[id] = repogitory[id] || {}
+    const options = {
+      initValue: repogitory[id],
+    }
+
+    const useStore = memo[id] ?? (memo[id] = createStore<State, Actions>(init, options))
+    return useStore(...args)
+  }
+
+  const ComponentStoreProvider = (props: {id: string | number; key: Key; children: ReactNode}) =>
+    createElement(ComponentStoreContext.Provider, {value: props.id}, props.children)
+
+  return [useComponentStore, ComponentStoreProvider] as const
 }

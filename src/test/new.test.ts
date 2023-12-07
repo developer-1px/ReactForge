@@ -148,20 +148,36 @@ describe("[new] Store와 리듀서", () => {
       on.INCREASE(() => (state) => state.test++)
     })
 
+    store.doubledCount = reducer((state) => state.count * 2)
+
     store.foo = {}
     store.foo.bar = 200
 
     const [state, subscribe, marked] = snapshot()
-    console.log("#", state.test)
-    console.log("#", state.count)
+
+    console.log("markedmarked", marked)
+
+    // console.log("#", state.test)
+    // console.log("#", state.count)
     // console.log("#", state.foo.bar)
+    console.log("#", state.doubledCount)
+
+    console.log("markedmarked", marked)
 
     dispatch.INCREASE(1)
-    dispatch.DECREASE(1)
+    // dispatch.DECREASE(1)
     // dispatch.RESET()
 
     console.log("markedmarked", marked)
 
-    console.log(state)
+    console.log(state.doubledCount)
+
+    dispatch.INCREASE(1)
+
+    console.log(state.doubledCount)
+
+    dispatch.INCREASE(1)
+
+    console.log(state.doubledCount)
   })
 })

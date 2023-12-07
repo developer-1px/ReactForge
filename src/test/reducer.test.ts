@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest"
-import {createStorePart} from "./createStore.ts"
+import {createStorePart} from "./newStore.ts"
 
 interface State {
   x: number

@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest"
-import {createDraftProxy, createStorePart} from "./createStore.ts"
+import {createDraftProxy, createStorePart} from "./newStore.ts"
 
 // -----------------------------------------------------------------------------------------------------
 interface State {
@@ -28,10 +28,8 @@ interface Actions {
 }
 
 describe("proxy", () => {
-  const {store, reducer, createState, $store, $state} = createStorePart<State, Actions>()
-
-  const [state] = createState("root")
-  const [state2] = createState("root2")
+  const {store, reducer} = createStorePart<State, Actions>()
+  const state = store
 
   it("Store.md, State, Computed", () => {
     return
@@ -41,21 +39,16 @@ describe("proxy", () => {
 
     // Store에 보관된 값은 모든 state의 시작값이 되어줌.
     expect(store.foo.bar).toBe(200)
-    expect($store.foo.bar).toBe(200)
-    expect($state.foo.bar).toBe(200)
     expect(state.foo.bar).toBe(200)
-    expect(state2.foo.bar).toBe(200)
 
     // state는 경로 중에 undefined면 에러남.
     // @TODO: throw test
 
     //
     state.x = 100
-    state2.y = 1
 
     expect(state.x).toBe(100)
     expect(state2.x).toBe(100)
-    expect($state.x).toBe(100)
 
     // state의 변화가 store 값에 영향을 주지는 않는다.
     expect(store.x).not.toBe(100)
@@ -97,7 +90,7 @@ describe("proxy", () => {
   it("Draft Test", () => {
     return
 
-    const {store, reducer, createState, $store, $state} = createStorePart<State, Actions>()
+    const {store, reducer} = createStorePart<State, Actions>()
 
     const [state] = createState("state1")
 

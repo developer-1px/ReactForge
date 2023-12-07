@@ -1,11 +1,10 @@
-import {createComponentStore} from "../test/createStore.ts"
+import {createComponentStore} from "../test/newStore.ts"
 
 //
 // Todo
 // -----------------------------------------------------------------------------------------------------------------
-
 const db = {
-  Todo: {} as Record<string, Todo>,
+  Todo: {} as Record<PropertyKey, Todo>,
 }
 
 db.Todo["1"] = {id: "1", text: "test1", completed: true}
@@ -23,8 +22,8 @@ interface TodoActions {
   SET_TEXT(text: string): void
 }
 
-export const [useTodoStore, TodoItemProvider, createTodo] = createComponentStore<Todo, TodoActions>(({store, reducer, key}) => {
-  store.id = key
+export const [useTodoStore, TodoItemProvider] = createComponentStore<Todo, TodoActions>(({store, reducer, key}) => {
+  // store.id = key
 
   store.text = reducer("", (on) => {
     on.SET_TEXT((text) => (state) => (state.text = text))
@@ -33,14 +32,13 @@ export const [useTodoStore, TodoItemProvider, createTodo] = createComponentStore
   store.completed = reducer(false, (on) => {
     on.TOGGLE(() => (state) => (state.completed = !state.completed))
   })
-})
+}, db.Todo)
 
 //
 // Todo List
 // -----------------------------------------------------------------------------------------------------------------
 
 interface TodoList {
-  v: number
   todos: Todo[]
   num_todos: number
   num_completed_todos: number
@@ -51,17 +49,25 @@ interface TodoListActions {
 }
 
 export const [useTodoListStore] = createComponentStore<TodoList, TodoListActions>(({store, reducer}) => {
-  store.v = 0
-
   // reducer
   store.todos = reducer((state) => {
-    return ["!23123123"]
+    return Object.values(db.Todo)
   })
 
   // computed value
   store.num_todos = reducer((state) => state.todos.length)
 
   store.num_completed_todos = reducer((state) => state.todos.filter((todo) => todo.completed).length)
+
+  store.Todo = reducer(db.Todo, (on) => {
+    on.ADD_TODO((id, text) => (state) => {
+      db.Todo[id] = {id, text, completed: false}
+    })
+  })
+
+  store.test = reducer(0, (on) => {
+    on.ADD_TODO(() => (state) => state.test++)
+  })
 })
 
 //
@@ -70,24 +76,19 @@ export const [useTodoListStore] = createComponentStore<TodoList, TodoListActions
 // -----------------------------------------------------------------------------------------------------------------
 
 function TodoItem() {
-  const {text, completed, dispatch} = useTodoStore()
-
-  console.log(text)
+  const {id, text, completed, dispatch} = useTodoStore()
 
   const toggleTodo = () => dispatch.TOGGLE()
 
   return (
-    <li style={{textDecoration: completed ? "line-through" : "none"}} onClick={toggleTodo}>
-      {text}
+    <li className="pointer" style={{textDecoration: completed ? "line-through" : "none"}} onClick={toggleTodo}>
+      {id} - {text}
     </li>
   )
 }
 
 export default function TodoList() {
-  const {todos, dispatch} = useTodoListStore("todoListStore")
-
-  console.warn(">>>>>>>>>>>>>>>>>>> todos", todos)
-  console.warn(">>>>>>>>>>>>>>>>>>> todos.map", todos.map)
+  const {todos, num_todos, dispatch} = useTodoListStore("todoListStore")
 
   const generateUniqueId = () => Math.random().toString(36).slice(2)
 
@@ -98,9 +99,11 @@ export default function TodoList() {
 
   return (
     <>
+      <div>num_todos: {num_todos}</div>
       <input type="text" onKeyDown={(e) => e.key === "Enter" && addTodo(e.target.value)} />
       <ul>
         {todos.map((todo) => (
+          // extra value들도 넘길수 있으면 좋겠다. index같은...
           <TodoItemProvider key={todo.id} id={todo.id}>
             <TodoItem />
           </TodoItemProvider>

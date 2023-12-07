@@ -1,4 +1,4 @@
-import {createStore} from "../test/createStore.ts"
+import {createStore} from "../test/newStore.ts"
 
 interface User {
   id: string

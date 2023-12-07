@@ -1,4 +1,4 @@
-import {createComponentStore} from "../test/createStore.ts"
+import {createComponentStore} from "../test/newStore.ts"
 
 interface CounterState {
   count: number
