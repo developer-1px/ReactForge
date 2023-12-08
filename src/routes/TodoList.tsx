@@ -50,7 +50,7 @@ interface TodoListActions {
 
 export const [useTodoListStore] = createComponentStore<TodoList, TodoListActions>(({store, reducer}) => {
   // reducer
-  store.todos = reducer((state) => {
+  store.todos = reducer(() => {
     return Object.values(db.Todo)
   })
 
@@ -63,10 +63,6 @@ export const [useTodoListStore] = createComponentStore<TodoList, TodoListActions
     on.ADD_TODO((id, text) => (state) => {
       db.Todo[id] = {id, text, completed: false}
     })
-  })
-
-  store.test = reducer(0, (on) => {
-    on.ADD_TODO(() => (state) => state.test++)
   })
 })
 
@@ -97,10 +93,14 @@ export default function TodoList() {
     dispatch.ADD_TODO(newId, text)
   }
 
+  const removeTitle = (e) => {
+    e.target.value = ""
+  }
+
   return (
     <>
       <div>num_todos: {num_todos}</div>
-      <input type="text" onKeyDown={(e) => e.key === "Enter" && addTodo(e.target.value)} />
+      <input type="text" onKeyDown={(e) => e.key === "Enter" && addTodo(e.target.value) & removeTitle(e)} />
       <ul>
         {todos.map((todo) => (
           // extra value들도 넘길수 있으면 좋겠다. index같은...

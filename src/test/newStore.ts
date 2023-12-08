@@ -6,8 +6,8 @@ export const isObject = (target: unknown): target is object => Object(target) ==
 //
 // Store
 // --------------------------------------------------------------------
-const nonProxyTypes = [Function, Date, RegExp, Set, Map, WeakSet, WeakMap, Error, ArrayBuffer, globalThis.Node]
-const isProxiable = (target: unknown): target is object => isObject(target) && !nonProxyTypes.some((type) => type && target instanceof type)
+const NON_PROXY_TYPES = [Function, Date, RegExp, Set, Map, WeakSet, WeakMap, Error, ArrayBuffer, globalThis.Node || Function]
+const isProxiable = (target: unknown) => isObject(target) && !NON_PROXY_TYPES.some((type) => target instanceof type)
 const proxiedObjects = new Map<object, object>()
 
 const createCachedProxy = <T extends object>(obj: T, handler: ProxyHandler<T>) => {
@@ -18,9 +18,15 @@ const createCachedProxy = <T extends object>(obj: T, handler: ProxyHandler<T>) =
   return proxy
 }
 
-const registerPrototype = (target: object) => {
+const VERSION = Symbol("@version")
+
+const registerVersionedPrototype = (target: object) => {
   let proto = Object.getPrototypeOf(target)
-  proto = proto === Object.prototype ? {} : proto
+  if (proto && VERSION in proto) {
+    return proto
+  }
+
+  proto = {[VERSION]: {}}
   Object.setPrototypeOf(target, proto)
   return proto
 }
@@ -29,6 +35,8 @@ const registerPrototype = (target: object) => {
 
 // @FIXME: computed value를 Object geterr와 Proxy get trap에서 둘다 쓰고 있다. 하나는 필요없다.
 // @FIXME: 항상 계산하는 게 아니라 관련 데이터가 업데이트 되었을때에만 갱신하는 방식을 구현하자!
+
+// @FIXME: get에서 Proxy를 만들지 말고 set에서 만들자!
 
 function createStoreProxy<State extends object>(obj: State | object, root: State): State {
   return createCachedProxy(obj, {
@@ -54,27 +62,34 @@ function createStoreProxy<State extends object>(obj: State | object, root: State
         return true
       }
 
-      // version up!
-      const proto = registerPrototype(target)
-      proto[VERSION] = proto[VERSION] || {}
+      // update mark: version up!
+      const proto = registerVersionedPrototype(target)
       proto[VERSION][prop] = (proto[VERSION][prop] || 0) + 1
 
       // set reducer
       if (value instanceof Reducer) {
         // register Reducer
         const reducer = value
-        const proto = registerPrototype(target)
         proto[prop] = reducer
 
         // Computed Getter
         if (reducer.computed) {
-          const state = createStoreProxy(root, root)
+          const [state, _, marker, reconcile] = createSnapshot(root)
+          let isDirty = true
+          let computedValue: unknown
+
           Object.defineProperty(proto, prop, {
             get: () => {
-              const computedValue = reducer.computed(state)
-              // Reflect.set(target, prop, computedValue, receiver)
+              reconcile(() => (isDirty = true))
+              computedValue = isDirty ? reducer.computed(state) : computedValue
+              console.log("called getter: isDirty", prop, isDirty, marker)
+              if (isDirty) {
+                proto[VERSION][prop] = (proto[VERSION][prop] || 0) + 1
+                isDirty = marker.size === 0
+              }
               return computedValue
             },
+            configurable: true,
           })
           return true
         }
@@ -83,6 +98,7 @@ function createStoreProxy<State extends object>(obj: State | object, root: State
         if (currentValue === undefined) {
           return Reflect.set(target, prop, reducer.value, receiver)
         }
+
         return true
       }
 
@@ -99,17 +115,18 @@ const createDraftProxyPath = (obj: object): object => {
   if (!isProxiable(obj)) return obj
   return new Proxy(obj, {
     get(target, prop, receiver) {
+      const result = Reflect.get(target, prop, receiver)
+
       if (Reflect.getOwnPropertyDescriptor(target, prop)) {
-        return createDraftProxyPath(Reflect.get(target, prop, receiver))
+        return result
       }
 
-      let result = Reflect.get(target, prop, receiver)
-      if (isObject(result)) {
-        result = Object.create(result)
-        Reflect.set(target, prop, result, receiver)
+      if (isProxiable(result)) {
+        Reflect.set(target, prop, Object.create(result), receiver)
+        return createDraftProxyPath(result)
       }
 
-      return createDraftProxyPath(result)
+      return result
     },
 
     deleteProperty(target, prop) {
@@ -154,7 +171,6 @@ class Reducer<State extends object, Actions, T> {
 //
 // Snapshot
 // ----------------------------------------------------------------
-const VERSION = Symbol("@version")
 
 const compareSnapshotKey = (obj1: Record<string, unknown>, obj2: Record<string, unknown>) => {
   const keys1 = Object.keys(obj1)
@@ -181,36 +197,38 @@ const createSnapshotPath = (obj: object, marked): object => {
 }
 
 function createSnapshot<State extends object>(store: State) {
-  const marked = new Map<Record<string, number>, Record<string, number>>()
-  const snapshot = createSnapshotPath(store, marked)
+  const marker = new Map<Record<string, number>, Record<string, number>>()
+  const snapshot = createSnapshotPath(store, marker) as State
 
-  const callBackSet = new Set()
+  const updateCallbacks = new Set()
 
-  const handler = (...args) => {
-    // once!!
-    console.log("subscribeMutation", ...args, marked)
-
-    for (const [key, snapshotKeys] of marked) {
-      console.log("check!!", key, snapshotKeys)
-
+  const reconcile = (ifDirty: Function) => {
+    for (const [key, snapshotKeys] of marker) {
       if (!compareSnapshotKey(snapshotKeys, key)) {
-        callBackSet.forEach((cb) => cb(snapshotKeys))
+        console.log("dirty!", key, snapshotKeys)
+        ifDirty(snapshotKeys)
         Object.keys(snapshotKeys).forEach((prop) => (snapshotKeys[prop] = key[prop]))
-        break
+        return true
       }
     }
+
+    return false
+  }
+
+  const mutationHandler = (...args) => {
+    reconcile((snapshotKeys) => updateCallbacks.forEach((cb) => cb(snapshotKeys)))
   }
 
   const subscribe = (callback: Function) => {
-    const unsubscribe = subscribeMutation(handler)
-    callBackSet.add(callback)
+    updateCallbacks.add(callback)
+    const unsubscribe = subscribeMutation(mutationHandler)
     return () => {
-      callBackSet.delete(callback)
-      if (callBackSet.size === 0) unsubscribe()
+      updateCallbacks.delete(callback)
+      if (updateCallbacks.size === 0) unsubscribe()
     }
   }
 
-  return [snapshot, subscribe, marked] as const
+  return [snapshot, subscribe, marker, reconcile] as const
 }
 
 //
@@ -280,7 +298,7 @@ const subscribeMutation = (callback: Function) => {
   return () => mutationCallbackSet.delete(callback)
 }
 
-const publishMutaion = (...args) => {
+const publishMutation = (...args) => {
   mutationCallbackSet.forEach((cb) => cb(...args))
 }
 
@@ -288,8 +306,6 @@ function createDispatch<State extends object, Actions>(store: State, options) {
   const defaultOptions = {}
   options = {...defaultOptions, ...options}
   const middleware = options.middleware
-
-  console.warn({middleware})
 
   const dispatchAction = (type: string, payload: unknown[]) => {
     const stateChanges = {}
@@ -306,7 +322,7 @@ function createDispatch<State extends object, Actions>(store: State, options) {
     })
 
     deepMerge(store, stateChanges)
-    publishMutaion(store, stateChanges)
+    publishMutation(store, stateChanges)
   }
 
   const next = ({type, payload}) => dispatchAction(type, payload)
@@ -315,9 +331,6 @@ function createDispatch<State extends object, Actions>(store: State, options) {
     get(_, type: string) {
       return (...payload: unknown[]) => {
         const action = {type, payload}
-
-        console.warn("dispatch", {action})
-
         middleware({dispatch, getState: () => store})(next)(action)
       }
     },
@@ -350,14 +363,19 @@ const useStoreFactory = <State extends object, Actions>(store: State, dispatch: 
 // -----------------------------------------------------------------------------------------------
 
 const logger = (api) => (next) => (action) => {
-  // const {type, payload} = action
-  // console.group(type + "(", ...payload, ")")
-  // console.groupCollapsed("(callstack)")
-  // console.trace("")
-  // console.groupEnd()
+  if (!globalThis.document) {
+    next(action)
+    return
+  }
+
+  const {type, payload} = action
+  console.group(type + "(", ...payload, ")")
+  console.groupCollapsed("(callstack)")
+  console.trace("")
+  console.groupEnd()
   next(action)
-  // console.log(api.getState())
-  // console.groupEnd()
+  console.log(api.getState())
+  console.groupEnd()
 }
 
 const tmpOption = {
@@ -370,7 +388,7 @@ export function createStorePart<State extends object, Actions>(options = {}) {
   const state: State = (options.initValue ?? {}) as State
 
   const store = createStoreProxy<State>(state, state)
-  const proto = registerPrototype(store)
+  const proto = registerVersionedPrototype(store)
 
   const reducer = <T, R extends T>(init: Init<State, T>, fn: ReducerFn<State, Actions> = noop): R => new Reducer(init, fn) as R
 
