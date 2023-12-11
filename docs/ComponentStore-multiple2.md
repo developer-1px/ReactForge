@@ -13,15 +13,21 @@ ComponentStore is a modern state management library for React, designed to offer
 
 ## Usage
 
-### Setting Up Providers
+### Setting Up ComponentStore
 
-1. **TodoProvider:** Manages the state of individual todo items.
+1. **createComponentStore** Manages the state of individual todo items.
 
 ```tsx
 interface Todo {
-  id: string;
-  text: string;
-  completed: boolean;
+  id: string
+  text: string
+  completed: boolean
+  creatorId: string
+}
+
+interface TodoExtra {
+  creator?: User
+  수정권한이_있는가: false
 }
 
 interface TodoActions {
@@ -29,51 +35,58 @@ interface TodoActions {
   SET_TEXT(text: string): void
 }
 
-export const [useTodo, TodoProvider, createTodo] = createComponentStore<Todo, TodoActions>(({store:Todo, reducer, key}) => {
-  
-  Todo.id = key 
+export const [useTodo, TodoProvider, TodoRepo] = createComponentStore<Todo, TodoActions, TodoExtra>(({store: Todo, reducer, key}) => {
+  // Todo.id = key
 
   Todo.text = reducer("", (on) => {
-    on.SET_TEXT((text) => (todo) => (todo.text = text))
+    on.SET_TEXT((text) => (state) => (state.text = text))
   })
 
   Todo.completed = reducer(false, (on) => {
-    on.TOGGLE(() => (todo) => (todo.completed = !todo.completed))
+    on.TOGGLE(() => (state) => (state.completed = !state.completed))
   })
 })
 ```
 
 
 
-2. **TodoListProvider:** Manages the state of the entire todo list.
+2. **createStore:** Manages the state of the entire todo list.
 
 ```tsx
-import {createComponentStore} from "componentstore"
 
-interface TodoList {
-  todos: TodoItem[]
+interface TodoApp {
+  Todo: Record<PropertyKey, Todo>
+
+  todos: Todo[]
   num_todos: number
   num_completed_todos: number
 }
 
-interface TodoListActions {
-  ADD_TODO(id: string): void
+interface TodoAppActions {
+  ADD_TODO(id: string, text: string): void
+  REMOVE_TODO(id: string): void
 }
 
-export const [TodoListProvider, useTodoListStore] = createComponentStore<TodoList, TodoListActions>(({store, reducer}) => {
-  // reducer
-  store.todos = reducer([], (on) => {
-    on.ADD_TODO((id) => (state) => {
-      const newTodo = createTodo(id)
-      state.todos.push(newTodo)
+export const useTodoApp = createStore<TodoApp, TodoAppActions>(({store, reducer}) => {
+  // Repository
+  store.Todo = reducer(TodoRepo, (on) => {
+    on.ADD_TODO((id, text) => (state) => {
+      state.Todo[id] = {id, text, completed: false, creatorId: "tmp"}
+    })
+
+    on.REMOVE_TODO((id) => (state) => {
+      delete state.Todo[id]
     })
   })
-   
+
   // computed value
+  store.todos = reducer((state) => Object.values(state.Todo).filter(Boolean))
+
   store.num_todos = reducer((state) => state.todos.length)
 
-  store.num_completed_todos = reducer((state) => state.todos.filter(todo => todo.completed).length)
+  store.num_completed_todos = reducer((state) => state.todos.filter((todo) => todo.completed).length)
 })
+
 ```
 
 
@@ -82,33 +95,35 @@ export const [TodoListProvider, useTodoListStore] = createComponentStore<TodoLis
 1. **TodoList Component:** Uses `TodoListProvider` to manage the list.
 
 ```tsx
-function TodoList() {
-  const {todos, dispatch} = useTodoListStore()
+export default function TodoList() {
+  const {todos, num_todos, dispatch} = useTodoApp()
 
-  const addTodo = (text) => {
-    const newId = generateUniqueId()
-    dispatch.ADD_TODO(newId)
+  const generateUniqueId = () => Math.random().toString(36).slice(2)
+
+  const addTodo = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return
+    if (e.key === "Enter") {
+      const text = e.currentTarget.value
+      const newId = generateUniqueId()
+      dispatch.ADD_TODO(newId, text)
+
+      e.currentTarget.value = ""
+    }
   }
 
   return (
     <>
-      <input type="text" onKeyPress={(e) => e.key === "Enter" && addTodo(e.target.value)} />
+      <div>num_todos: {num_todos}</div>
+      <input type="text" onKeyDownCapture={addTodo} />
       <ul>
         {todos.map((todo) => (
-          <TodoProvider key={todo.id}>
+          // extra value들도 넘길수 있으면 좋겠다. index같은...
+          <TodoProvider key={todo.id} id={todo.id}>
             <TodoItem />
           </TodoProvider>
         ))}
       </ul>
     </>
-  )
-}
-
-function App() {
-  return (
-    <TodoListProvider>
-      <TodoList />
-    </TodoListProvider>
   )
 }
 ```
@@ -117,13 +132,18 @@ function App() {
 
 ```tsx
 function TodoItem() {
-  const {text, completed, dispatch} = useTodo()
+  const {id, text, completed, dispatch} = useTodo()
+  const app = useTodoApp()
 
   const toggleTodo = () => dispatch.TOGGLE()
+  const removeTodo = () => app.dispatch.REMOVE_TODO(id)
 
   return (
-    <li style={{textDecoration: completed ? "line-through" : "none"}} onClick={toggleTodo}>
-      {text}
+    <li className="hbox pointer" style={{textDecoration: completed ? "line-through" : "none"}} onClickCapture={toggleTodo}>
+      <div>
+        {id} - {text}
+      </div>
+      <button onClickCapture={removeTodo}>삭제</button>
     </li>
   )
 }
@@ -196,21 +216,12 @@ export default TodoList
 
 ```tsx
 // TodoItemStore 설정
-const [TodoListProvider, useTodoListStore] = createComponentStore<...>(...)
+const useTodoApp = createStore<...>(...)
 const [TodoProvider, useTodo] = createComponentStore<...>(...)
-
-/* 단일로 쓸거라면 TodoListProvider가 꼭 필요할까?? 하나라면 없어도 되는 방향도 검토해보자... */
-function App() {
-  return (
-    <TodoListProvider>
-      <TodoList />
-    </TodoListProvider>
-  )
-}
 
 // TodoList 컴포넌트
 function TodoList() {
-  const {todos, dispatch} = useTodoListStore()
+  const {todos, dispatch} = useTodoApp()
 
   const addTodo = (text) => {
     const newId = generateUniqueId()
@@ -260,9 +271,6 @@ function TodoCheckbox() {
 
 
 ---
-
-> /* 단일로 쓸거라면 TodoListProvider가 꼭 필요할까?? 하나라면 없어도 되는 방향도 검토해보자... */
-
 
 ## Key Advantages
 

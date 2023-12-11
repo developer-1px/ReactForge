@@ -1,32 +1,22 @@
 import {createContext, createElement, Key, ReactNode, useContext, useEffect, useState} from "react"
 
-export const isObject = (target: unknown): target is object => Object(target) === target
+const NON_PROXY_TYPES = [Function, Date, RegExp, Set, Map, WeakSet, WeakMap, Error, ArrayBuffer, globalThis.Node || Function]
+
+const isObject = (target: unknown): target is object => Object(target) === target
+
+const isProxiable = (target: unknown) => isObject(target) && !NON_PROXY_TYPES.some((type) => target instanceof type)
 
 const mapCacheValueOf = <T>(key: unknown, map: Map<unknown, T>, data: T): T =>
   map.has(key) ? (map.get(key) as T) : void map.set(key, data) || data
 
 const trackedObjects = new Set<object>()
 
-window.trackedObjects = trackedObjects
-
 //
 //
 // Store
 // --------------------------------------------------------------------
-const NON_PROXY_TYPES = [Function, Date, RegExp, Set, Map, WeakSet, WeakMap, Error, ArrayBuffer, globalThis.Node || Function]
-const isProxiable = (target: unknown) => isObject(target) && !NON_PROXY_TYPES.some((type) => target instanceof type)
-const proxiedObjects = new Map<object, object>()
-
-const createCachedProxy = <T extends object>(obj: T, handler: ProxyHandler<T>) => {
-  if (!isProxiable(obj)) return obj
-  if (proxiedObjects.has(obj)) return proxiedObjects.get(obj) as T
-  const proxy = new Proxy(obj, handler)
-  proxiedObjects.set(obj, proxy)
-  return proxy
-}
 
 const STORE = Symbol("@@store")
-
 const registerStorePrototype = (target: object) => {
   let proto = Object.getPrototypeOf(target)
   if (proto && STORE in proto) {
@@ -44,68 +34,139 @@ const registerStorePrototype = (target: object) => {
 // @FIXME: 항상 계산하는 게 아니라 관련 데이터가 업데이트 되었을때에만 갱신하는 방식을 구현하자!
 
 // @FIXME: get에서 Proxy를 만들지 말고 set에서 만들자!
+const storeProxyMap = new Map<object, object>()
 
 function createStoreProxy<State extends object>(obj: State | object, root: State): State {
-  return createCachedProxy(obj, {
-    get(target, prop, receiver) {
-      const result = Reflect.get(target, prop, receiver)
-      if (!trackedObjects.has(result)) {
-        return result
-      }
+  if (!isProxiable(obj)) return obj as State
+  return mapCacheValueOf(
+    obj,
+    storeProxyMap,
+    new Proxy(obj, {
+      get(target, prop, receiver) {
+        const result = Reflect.get(target, prop, receiver)
+        if (!trackedObjects.has(result)) {
+          return result
+        }
 
-      return createStoreProxy(result, root)
-    },
+        return createStoreProxy(result, root)
+      },
 
-    // store.id = key
-    // store.val = value
-    // store.count = reducer(0, {...})
-    set(target, prop, value, receiver) {
-      const currentValue = Reflect.get(target, prop, receiver)
-      if (Object.is(currentValue, value)) {
-        return true
-      }
+      // store.id = key
+      // store.val = value
+      // store.count = reducer(0, {...})
+      set(target, prop, value, receiver) {
+        const currentValue = Reflect.get(target, prop, receiver)
+        if (Object.is(currentValue, value)) {
+          return true
+        }
 
-      // set reducer
-      if (value instanceof Reducer) {
-        // register Reducer
-        const reducer = value
-        const proto = registerStorePrototype(target)
-        proto[prop] = reducer
+        // set reducer
+        if (value instanceof Reducer) {
+          // register Reducer
+          const reducer = value
+          const proto = registerStorePrototype(target)
+          proto[prop] = reducer
 
-        // Computed Getter
-        if (reducer.computed) {
-          const [state, _, marker, reconcile] = createSnapshot(root)
-          let isDirty = true
-          let computedValue: unknown
+          // Computed Getter
+          if (reducer.computed) {
+            const [state, _, marker, reconcile] = createSnapshot(root)
+            let isDirty = true
+            let computedValue: unknown
 
-          Object.defineProperty(proto, prop, {
-            get: () => {
-              // reconcile(() => (isDirty = true))
-              computedValue = isDirty ? reducer.computed(state) : computedValue
-              if (isDirty) {
-                isDirty = marker.size === 0
-              }
-              isDirty = true
-              return computedValue
-            },
-            configurable: true,
-          })
+            Object.defineProperty(proto, prop, {
+              get: () => {
+                // reconcile(() => (isDirty = true))
+                computedValue = isDirty ? reducer.computed(state) : computedValue
+                if (isDirty) {
+                  isDirty = marker.size === 0
+                }
+                isDirty = true
+                return computedValue
+              },
+              configurable: true,
+            })
+
+            return true
+          }
+
+          // init Reducer value
+          if (currentValue === undefined) {
+            return Reflect.set(target, prop, reducer.value, receiver)
+          }
 
           return true
         }
 
-        // init Reducer value
-        if (currentValue === undefined) {
-          return Reflect.set(target, prop, reducer.value, receiver)
-        }
+        // update mark: version up!
+        return Reflect.set(target, prop, value, receiver)
+      },
+    })
+  ) as State
+}
 
+//
+//
+// Snapshot
+// ----------------------------------------------------------------
+
+const compareSnapshotKey = (obj1: Record<PropertyKey, unknown>, obj2: Record<PropertyKey, unknown>) => {
+  const keys1 = Object.keys(obj1)
+  for (const key of keys1) if (obj1[key] !== obj2[key]) return false
+  return true
+}
+
+const createSnapshotPath = (obj: object, marked: Map<unknown, Record<PropertyKey, unknown>>, snapshotMap): object => {
+  if (!isProxiable(obj)) return obj
+  return mapCacheValueOf(
+    obj,
+    snapshotMap,
+    new Proxy(obj, {
+      get(target, prop, receiver) {
+        const mark = mapCacheValueOf(target, marked, {})
+        mark[prop] = target[prop]
+        trackedObjects.add(target)
+
+        const result = Reflect.get(target, prop, receiver)
+        return createSnapshotPath(result, marked, snapshotMap)
+      },
+    }) as object
+  )
+}
+
+function createSnapshot<State extends object>(store: State) {
+  const marker = new Map<unknown, Record<string, object>>()
+  const snapshotMap = new Map<unknown, State>()
+  const snapshot = createSnapshotPath(store, marker, snapshotMap) as State
+
+  const updateCallbacks = new Set()
+
+  const reconcile = (ifDirty: Function) => {
+    for (const [target, lastVersions] of marker) {
+      if (!compareSnapshotKey(lastVersions, target)) {
+        // console.log("dirty!", lastVersions, target)
+        ifDirty(lastVersions)
         return true
       }
+    }
 
-      // update mark: version up!
-      return Reflect.set(target, prop, value, receiver)
-    },
-  }) as State
+    return false
+  }
+
+  const mutationHandler = (...args) => {
+    reconcile((snapshotKeys) => updateCallbacks.forEach((cb) => cb(snapshotKeys)))
+    marker.clear()
+  }
+
+  const subscribe = (callback: Function) => {
+    updateCallbacks.add(callback)
+    const unsubscribe = subscribeMutation(mutationHandler)
+    return () => {
+      updateCallbacks.delete(callback)
+      if (updateCallbacks.size === 0) unsubscribe()
+    }
+  }
+
+  return [snapshot, subscribe, marker, reconcile] as const
 }
 
 //
@@ -170,71 +231,6 @@ class Reducer<State extends object, Actions, T> {
     this.value = typeof init !== "function" ? init : undefined
     this.computed = typeof init === "function" ? init : undefined
   }
-}
-
-//
-//
-// Snapshot
-// ----------------------------------------------------------------
-
-const compareSnapshotKey = (obj1: Record<PropertyKey, unknown>, obj2: Record<PropertyKey, unknown>) => {
-  const keys1 = Object.keys(obj1)
-  for (const key of keys1) if (obj1[key] !== obj2[key]) return false
-  return true
-}
-
-const createSnapshotPath = (obj: object, marked: Map<unknown, Record<PropertyKey, unknown>>, snapshotMap): object => {
-  if (!isProxiable(obj)) return obj
-  return mapCacheValueOf(
-    obj,
-    snapshotMap,
-    new Proxy(obj, {
-      get(target, prop, receiver) {
-        const mark = mapCacheValueOf(target, marked, {})
-        mark[prop] = target[prop]
-        trackedObjects.add(target)
-
-        const result = Reflect.get(target, prop, receiver)
-        return createSnapshotPath(result, marked, snapshotMap)
-      },
-    }) as object
-  )
-}
-
-function createSnapshot<State extends object>(store: State) {
-  const marker = new Map<unknown, Record<string, object>>()
-  const snapshotMap = new Map<unknown, State>()
-  const snapshot = createSnapshotPath(store, marker, snapshotMap) as State
-
-  const updateCallbacks = new Set()
-
-  const reconcile = (ifDirty: Function) => {
-    for (const [target, lastVersions] of marker) {
-      if (!compareSnapshotKey(lastVersions, target)) {
-        console.log("dirty!", lastVersions, target)
-        ifDirty(lastVersions)
-        return true
-      }
-    }
-
-    return false
-  }
-
-  const mutationHandler = (...args) => {
-    reconcile((snapshotKeys) => updateCallbacks.forEach((cb) => cb(snapshotKeys)))
-    marker.clear()
-  }
-
-  const subscribe = (callback: Function) => {
-    updateCallbacks.add(callback)
-    const unsubscribe = subscribeMutation(mutationHandler)
-    return () => {
-      updateCallbacks.delete(callback)
-      if (updateCallbacks.size === 0) unsubscribe()
-    }
-  }
-
-  return [snapshot, subscribe, marker, reconcile] as const
 }
 
 //
@@ -363,10 +359,9 @@ function createDispatch<State extends object, Actions>(store: State, state: Stat
 type UseStore<State, Actions> = Readonly<State> & {dispatch: Dispatch<Actions>}
 
 const useStoreFactory = <State extends object, Actions>(_state: State) => {
-  const [version, setVersion] = useState(0)
+  const [, setVersion] = useState(0)
   const [state, subscribe] = createSnapshot(_state)
   useEffect(() => subscribe(() => setVersion((version) => version + 1)), [subscribe])
-  state.version = version
   return state as UseStore<State, Actions>
 }
 
@@ -412,7 +407,7 @@ export function createStorePart<State extends object, Actions>(options = {}) {
 
   //
   // React
-  const useStore = (name: string) => useStoreFactory<State, Actions>(state)
+  const useStore = (debugLabel: string = "") => useStoreFactory<State, Actions>(state)
 
   return {store, snapshot, reducer, dispatch, useStore}
 }

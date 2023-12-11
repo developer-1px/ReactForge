@@ -24,7 +24,7 @@ interface TodoListActions {
   TOGGLE_TODO(id: string): void;
 }
 
-const [TodoListProvider, useTodoListStore] = createComponentStore<TodoListState, TodoListActions>();
+const [TodoListProvider, useTodoApp] = createComponentStore<TodoListState, TodoListActions>();
 ```
 
 #### 2. 투두 리스트 컴포넌트 구현
@@ -33,7 +33,7 @@ const [TodoListProvider, useTodoListStore] = createComponentStore<TodoListState,
 
 ```tsx
 function TodoList() {
-  const { state, dispatch } = useTodoListStore();
+  const { state, dispatch } = useTodoApp();
 
   const addTodo = (text) => {
     const newId = generateUniqueId(); // 고유 ID 생성 함수
@@ -61,7 +61,7 @@ function TodoList() {
 
 ```tsx
 function TodoItem() {
-  const { state, dispatch } = useTodoListStore();
+  const { state, dispatch } = useTodoApp();
 
   const toggleTodo = () => {
     dispatch.TOGGLE_TODO(state.id);
