@@ -3,13 +3,6 @@ import {createComponentStore} from "../test/newStore.ts"
 //
 // Todo
 // -----------------------------------------------------------------------------------------------------------------
-const db = {
-  Todo: {} as Record<PropertyKey, Todo>,
-}
-
-db.Todo["1"] = {id: "1", text: "test1", completed: true}
-db.Todo["2"] = {id: "2", text: "test123", completed: false}
-db.Todo["3"] = {id: "3", text: "test456", completed: false}
 
 interface Todo {
   id: string
@@ -22,23 +15,25 @@ interface TodoActions {
   SET_TEXT(text: string): void
 }
 
-export const [useTodoStore, TodoItemProvider] = createComponentStore<Todo, TodoActions>(({store, reducer, key}) => {
-  // store.id = key
+export const [useTodo, TodoProvider, TodoRepo] = createComponentStore<Todo, TodoActions>(({store: Todo, reducer, key}) => {
+  // Todo.id = key
 
-  store.text = reducer("", (on) => {
+  Todo.text = reducer("", (on) => {
     on.SET_TEXT((text) => (state) => (state.text = text))
   })
 
-  store.completed = reducer(false, (on) => {
+  Todo.completed = reducer(false, (on) => {
     on.TOGGLE(() => (state) => (state.completed = !state.completed))
   })
-}, db.Todo)
+})
 
 //
 // Todo List
 // -----------------------------------------------------------------------------------------------------------------
 
 interface TodoList {
+  Todo: Record<PropertyKey, Todo>
+
   todos: Todo[]
   num_todos: number
   num_completed_todos: number
@@ -46,24 +41,27 @@ interface TodoList {
 
 interface TodoListActions {
   ADD_TODO(id: string, text: string): void
+  REMOVE_TODO(id: string): void
 }
 
 export const [useTodoListStore] = createComponentStore<TodoList, TodoListActions>(({store, reducer}) => {
-  // reducer
-  store.todos = reducer(() => {
-    return Object.values(db.Todo)
+  // Repository
+  store.Todo = reducer(TodoRepo, (on) => {
+    on.ADD_TODO((id, text) => (state) => {
+      state.Todo[id] = {id, text, completed: false}
+    })
+
+    on.REMOVE_TODO((id) => (state) => {
+      delete state.Todo[id]
+    })
   })
 
   // computed value
+  store.todos = reducer((state) => Object.values(TodoRepo).filter(Boolean))
+
   store.num_todos = reducer((state) => state.todos.length)
 
   store.num_completed_todos = reducer((state) => state.todos.filter((todo) => todo.completed).length)
-
-  store.Todo = reducer(db.Todo, (on) => {
-    on.ADD_TODO((id, text) => (state) => {
-      db.Todo[id] = {id, text, completed: false}
-    })
-  })
 })
 
 //
@@ -72,13 +70,18 @@ export const [useTodoListStore] = createComponentStore<TodoList, TodoListActions
 // -----------------------------------------------------------------------------------------------------------------
 
 function TodoItem() {
-  const {id, text, completed, dispatch} = useTodoStore()
+  const {id, text, completed, dispatch} = useTodo()
+  const store = useTodoListStore()
 
   const toggleTodo = () => dispatch.TOGGLE()
+  const removeTodo = () => store.dispatch.REMOVE_TODO(id)
 
   return (
-    <li className="pointer" style={{textDecoration: completed ? "line-through" : "none"}} onClick={toggleTodo}>
-      {id} - {text}
+    <li className="hbox pointer" style={{textDecoration: completed ? "line-through" : "none"}} onClick={toggleTodo}>
+      <div>
+        {id} - {text}
+      </div>
+      <button onClick={removeTodo}>삭제</button>
     </li>
   )
 }
@@ -88,25 +91,27 @@ export default function TodoList() {
 
   const generateUniqueId = () => Math.random().toString(36).slice(2)
 
-  const addTodo = (text: string) => {
+  const addTodo = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.nativeEvent.isComposing) return
+    if (e.key !== "Enter") return
+
+    const text = e.currentTarget.value
     const newId = generateUniqueId()
     dispatch.ADD_TODO(newId, text)
-  }
 
-  const removeTitle = (e) => {
-    e.target.value = ""
+    e.currentTarget.value = ""
   }
 
   return (
     <>
       <div>num_todos: {num_todos}</div>
-      <input type="text" onKeyDown={(e) => e.key === "Enter" && addTodo(e.target.value) & removeTitle(e)} />
+      <input type="text" onKeyDown={addTodo} />
       <ul>
         {todos.map((todo) => (
           // extra value들도 넘길수 있으면 좋겠다. index같은...
-          <TodoItemProvider key={todo.id} id={todo.id}>
+          <TodoProvider key={todo.id} id={todo.id}>
             <TodoItem />
-          </TodoItemProvider>
+          </TodoProvider>
         ))}
       </ul>
     </>

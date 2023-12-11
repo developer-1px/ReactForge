@@ -2,6 +2,13 @@ import {createContext, createElement, Key, ReactNode, useContext, useEffect, use
 
 export const isObject = (target: unknown): target is object => Object(target) === target
 
+const mapCacheValueOf = <T>(key: unknown, map: Map<unknown, T>, data: T): T =>
+  map.has(key) ? (map.get(key) as T) : void map.set(key, data) || data
+
+const trackedObjects = new Set<object>()
+
+window.trackedObjects = trackedObjects
+
 //
 //
 // Store
@@ -18,15 +25,15 @@ const createCachedProxy = <T extends object>(obj: T, handler: ProxyHandler<T>) =
   return proxy
 }
 
-const VERSION = Symbol("@version")
+const STORE = Symbol("@@store")
 
-const registerVersionedPrototype = (target: object) => {
+const registerStorePrototype = (target: object) => {
   let proto = Object.getPrototypeOf(target)
-  if (proto && VERSION in proto) {
+  if (proto && STORE in proto) {
     return proto
   }
 
-  proto = {[VERSION]: {}}
+  proto = {[STORE]: true}
   Object.setPrototypeOf(target, proto)
   return proto
 }
@@ -41,15 +48,11 @@ const registerVersionedPrototype = (target: object) => {
 function createStoreProxy<State extends object>(obj: State | object, root: State): State {
   return createCachedProxy(obj, {
     get(target, prop, receiver) {
-      // Reducer: Computed Value 처리
-      // const reducer = Object.getPrototypeOf(target)[prop]
-      // if (reducer instanceof Reducer && reducer.computed) {
-      //   const state = createStoreProxy(root, root)
-      //   const result = reducer.computed(state)
-      //   return createStoreProxy(result, root)
-      // }
-
       const result = Reflect.get(target, prop, receiver)
+      if (!trackedObjects.has(result)) {
+        return result
+      }
+
       return createStoreProxy(result, root)
     },
 
@@ -62,14 +65,11 @@ function createStoreProxy<State extends object>(obj: State | object, root: State
         return true
       }
 
-      // update mark: version up!
-      const proto = registerVersionedPrototype(target)
-      proto[VERSION][prop] = (proto[VERSION][prop] || 0) + 1
-
       // set reducer
       if (value instanceof Reducer) {
         // register Reducer
         const reducer = value
+        const proto = registerStorePrototype(target)
         proto[prop] = reducer
 
         // Computed Getter
@@ -80,17 +80,17 @@ function createStoreProxy<State extends object>(obj: State | object, root: State
 
           Object.defineProperty(proto, prop, {
             get: () => {
-              reconcile(() => (isDirty = true))
+              // reconcile(() => (isDirty = true))
               computedValue = isDirty ? reducer.computed(state) : computedValue
-              console.log("called getter: isDirty", prop, isDirty, marker)
               if (isDirty) {
-                proto[VERSION][prop] = (proto[VERSION][prop] || 0) + 1
                 isDirty = marker.size === 0
               }
+              isDirty = true
               return computedValue
             },
             configurable: true,
           })
+
           return true
         }
 
@@ -102,6 +102,7 @@ function createStoreProxy<State extends object>(obj: State | object, root: State
         return true
       }
 
+      // update mark: version up!
       return Reflect.set(target, prop, value, receiver)
     },
   }) as State
@@ -111,32 +112,36 @@ function createStoreProxy<State extends object>(obj: State | object, root: State
 //
 // Draft
 // -----------------------------------------------------------------------
-const createDraftProxyPath = (obj: object): object => {
+const createDraftProxyPath = (obj: object, draftMap: Map<unknown, object>): object => {
   if (!isProxiable(obj)) return obj
-  return new Proxy(obj, {
-    get(target, prop, receiver) {
-      const result = Reflect.get(target, prop, receiver)
+  return mapCacheValueOf(
+    obj,
+    draftMap,
+    new Proxy(obj, {
+      get(target, prop, receiver) {
+        const result = Reflect.get(target, prop, receiver)
+        if (Reflect.getOwnPropertyDescriptor(target, prop)) {
+          return result
+        }
 
-      if (Reflect.getOwnPropertyDescriptor(target, prop)) {
+        if (isProxiable(result)) {
+          Reflect.set(target, prop, Object.create(result), receiver)
+          return createDraftProxyPath(result, draftMap)
+        }
+
         return result
-      }
+      },
 
-      if (isProxiable(result)) {
-        Reflect.set(target, prop, Object.create(result), receiver)
-        return createDraftProxyPath(result)
-      }
-
-      return result
-    },
-
-    deleteProperty(target, prop) {
-      return Reflect.set(target, prop, undefined)
-    },
-  }) as object
+      deleteProperty(target, prop) {
+        return Reflect.set(target, prop, undefined)
+      },
+    }) as object
+  )
 }
 
 export function createDraftProxy<State extends object>(store: State): State {
-  return createDraftProxyPath(Object.create(store)) as State
+  const draftMap = new Map<unknown, object>()
+  return createDraftProxyPath(Object.create(store), draftMap) as State
 }
 
 //
@@ -172,42 +177,42 @@ class Reducer<State extends object, Actions, T> {
 // Snapshot
 // ----------------------------------------------------------------
 
-const compareSnapshotKey = (obj1: Record<string, unknown>, obj2: Record<string, unknown>) => {
+const compareSnapshotKey = (obj1: Record<PropertyKey, unknown>, obj2: Record<PropertyKey, unknown>) => {
   const keys1 = Object.keys(obj1)
   for (const key of keys1) if (obj1[key] !== obj2[key]) return false
   return true
 }
 
-const createSnapshotPath = (obj: object, marked): object => {
+const createSnapshotPath = (obj: object, marked: Map<unknown, Record<PropertyKey, unknown>>, snapshotMap): object => {
   if (!isProxiable(obj)) return obj
-  return new Proxy(obj, {
-    get(target, prop, receiver) {
-      const proto = Object.getPrototypeOf(target)
-      const versionMap = proto[VERSION]
-      if (versionMap && typeof prop === "string") {
-        const lastVersions = marked.get(versionMap) || {}
-        lastVersions[prop] = versionMap[prop]
-        marked.set(versionMap, lastVersions)
-      }
+  return mapCacheValueOf(
+    obj,
+    snapshotMap,
+    new Proxy(obj, {
+      get(target, prop, receiver) {
+        const mark = mapCacheValueOf(target, marked, {})
+        mark[prop] = target[prop]
+        trackedObjects.add(target)
 
-      const result = Reflect.get(target, prop, receiver)
-      return createSnapshotPath(result, marked)
-    },
-  }) as object
+        const result = Reflect.get(target, prop, receiver)
+        return createSnapshotPath(result, marked, snapshotMap)
+      },
+    }) as object
+  )
 }
 
 function createSnapshot<State extends object>(store: State) {
-  const marker = new Map<Record<string, number>, Record<string, number>>()
-  const snapshot = createSnapshotPath(store, marker) as State
+  const marker = new Map<unknown, Record<string, object>>()
+  const snapshotMap = new Map<unknown, State>()
+  const snapshot = createSnapshotPath(store, marker, snapshotMap) as State
 
   const updateCallbacks = new Set()
 
   const reconcile = (ifDirty: Function) => {
-    for (const [key, snapshotKeys] of marker) {
-      if (!compareSnapshotKey(snapshotKeys, key)) {
-        console.log("dirty!", key, snapshotKeys)
-        ifDirty(snapshotKeys)
-        Object.keys(snapshotKeys).forEach((prop) => (snapshotKeys[prop] = key[prop]))
+    for (const [target, lastVersions] of marker) {
+      if (!compareSnapshotKey(lastVersions, target)) {
+        console.log("dirty!", lastVersions, target)
+        ifDirty(lastVersions)
         return true
       }
     }
@@ -217,6 +222,7 @@ function createSnapshot<State extends object>(store: State) {
 
   const mutationHandler = (...args) => {
     reconcile((snapshotKeys) => updateCallbacks.forEach((cb) => cb(snapshotKeys)))
+    marker.clear()
   }
 
   const subscribe = (callback: Function) => {
@@ -255,13 +261,17 @@ const traverseReducer = <T extends object>(
   })
 }
 
-const deepMerge = (target: Record<string, unknown>, source: Record<string, unknown>) => {
+const deepMerge = (target: Record<string, unknown>, source: Record<string, unknown>, flagDeleteUndefined = false) => {
   Object.keys(source).forEach((key) => {
     if (isObject(source[key])) {
       target[key] = target[key] || {}
       deepMerge(target[key], source[key])
     } else {
-      target[key] = source[key]
+      if (flagDeleteUndefined && source[key] === undefined) {
+        delete target[key]
+      } else {
+        target[key] = source[key]
+      }
     }
   })
   return target
@@ -302,7 +312,7 @@ const publishMutation = (...args) => {
   mutationCallbackSet.forEach((cb) => cb(...args))
 }
 
-function createDispatch<State extends object, Actions>(store: State, options) {
+function createDispatch<State extends object, Actions>(store: State, state: State, options) {
   const defaultOptions = {}
   options = {...defaultOptions, ...options}
   const middleware = options.middleware
@@ -313,7 +323,7 @@ function createDispatch<State extends object, Actions>(store: State, options) {
     // reduce 실행
     traverseReducer(store, (reducer, path, prop) => {
       if (reducer instanceof Reducer) {
-        const draft = createDraftProxy(store)
+        const draft = createDraftProxy(state)
         const on = createOn<State, Actions>(type, payload, draft, dispatch)
         reducer.reducerFn(on)
         deepMerge(stateChanges, draft)
@@ -321,8 +331,9 @@ function createDispatch<State extends object, Actions>(store: State, options) {
       }
     })
 
-    deepMerge(store, stateChanges)
-    publishMutation(store, stateChanges)
+    deepMerge(store, stateChanges, true)
+    publishMutation(state, stateChanges)
+    trackedObjects.clear()
   }
 
   const next = ({type, payload}) => dispatchAction(type, payload)
@@ -331,9 +342,10 @@ function createDispatch<State extends object, Actions>(store: State, options) {
     get(_, type: string) {
       return (...payload: unknown[]) => {
         const action = {type, payload}
-        middleware({dispatch, getState: () => store})(next)(action)
+        middleware({dispatch, getState: () => state})(next)(action)
       }
     },
+
     apply(_, thisArg, argumentsList) {
       //TODO
       const [type, ...payload] = argumentsList
@@ -350,10 +362,11 @@ function createDispatch<State extends object, Actions>(store: State, options) {
 // ----------------------------------------------------------------------------------------------
 type UseStore<State, Actions> = Readonly<State> & {dispatch: Dispatch<Actions>}
 
-const useStoreFactory = <State extends object, Actions>(store: State, dispatch: Dispatch<Actions>) => {
-  const [, setVersion] = useState(0)
-  const [state, subscribe] = createSnapshot(store, dispatch)
+const useStoreFactory = <State extends object, Actions>(_state: State) => {
+  const [version, setVersion] = useState(0)
+  const [state, subscribe] = createSnapshot(_state)
   useEffect(() => subscribe(() => setVersion((version) => version + 1)), [subscribe])
+  state.version = version
   return state as UseStore<State, Actions>
 }
 
@@ -388,18 +401,20 @@ export function createStorePart<State extends object, Actions>(options = {}) {
   const state: State = (options.initValue ?? {}) as State
 
   const store = createStoreProxy<State>(state, state)
-  const proto = registerVersionedPrototype(store)
+
+  const snapshot = () => createSnapshot<State>(state)
 
   const reducer = <T, R extends T>(init: Init<State, T>, fn: ReducerFn<State, Actions> = noop): R => new Reducer(init, fn) as R
 
-  const dispatch = createDispatch<State, Actions>(store, options)
+  const dispatch = createDispatch<State, Actions>(store, state, options)
+  const proto = registerStorePrototype(store)
   proto.dispatch = dispatch
 
-  const snapshot = () => createSnapshot<State>(store)
+  //
+  // React
+  const useStore = (name: string) => useStoreFactory<State, Actions>(state)
 
-  const useStore = (name: string) => useStoreFactory<State, Actions>(store, dispatch)
-
-  return {store, reducer, dispatch, snapshot, useStore}
+  return {store, snapshot, reducer, dispatch, useStore}
 }
 
 //
@@ -426,7 +441,7 @@ export function createStore<State extends object, Actions = null>(init: (builder
 // ------------------------------------------------------------------------------------------
 export function createComponentStore<State extends object, Actions>(
   init: (builder: Builder<State, Actions>) => void,
-  repogitory: Record<PropertyKey, State> = {}
+  repository: Record<PropertyKey, State> = {}
 ) {
   const ComponentStoreContext = createContext<string | number>("")
 
@@ -436,9 +451,9 @@ export function createComponentStore<State extends object, Actions>(
     const id = useContext(ComponentStoreContext)
 
     // @FIXME!!
-    repogitory[id] = repogitory[id] || {}
+    repository[id] = repository[id] || {}
     const options = {
-      initValue: repogitory[id],
+      initValue: repository[id],
     }
 
     const useStore = memo[id] ?? (memo[id] = createStore<State, Actions>(init, options))
@@ -448,5 +463,5 @@ export function createComponentStore<State extends object, Actions>(
   const ComponentStoreProvider = (props: {id: string | number; key: Key; children: ReactNode}) =>
     createElement(ComponentStoreContext.Provider, {value: props.id}, props.children)
 
-  return [useComponentStore, ComponentStoreProvider] as const
+  return [useComponentStore, ComponentStoreProvider, repository] as const
 }

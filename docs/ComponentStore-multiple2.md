@@ -29,7 +29,7 @@ interface TodoActions {
   SET_TEXT(text: string): void
 }
 
-export const [useTodoStore, TodoProvider, createTodo] = createComponentStore<Todo, TodoActions>(({store:Todo, reducer, key}) => {
+export const [useTodo, TodoProvider, createTodo] = createComponentStore<Todo, TodoActions>(({store:Todo, reducer, key}) => {
   
   Todo.id = key 
 
@@ -117,7 +117,7 @@ function App() {
 
 ```tsx
 function TodoItem() {
-  const {text, completed, dispatch} = useTodoStore()
+  const {text, completed, dispatch} = useTodo()
 
   const toggleTodo = () => dispatch.TOGGLE()
 
@@ -197,7 +197,7 @@ export default TodoList
 ```tsx
 // TodoItemStore 설정
 const [TodoListProvider, useTodoListStore] = createComponentStore<...>(...)
-const [TodoProvider, useTodoStore] = createComponentStore<...>(...)
+const [TodoProvider, useTodo] = createComponentStore<...>(...)
 
 /* 단일로 쓸거라면 TodoListProvider가 꼭 필요할까?? 하나라면 없어도 되는 방향도 검토해보자... */
 function App() {
@@ -243,13 +243,13 @@ function TodoItem() {
 
 // TodoText 컴포넌트
 function TodoText() {
-  const {text} = useTodoStore()
+  const {text} = useTodo()
   return <span>{text}</span>
 }
 
 // TodoCheckbox 컴포넌트
 function TodoCheckbox() {
-  const {completed, dispatch} = useTodoStore()
+  const {completed, dispatch} = useTodo()
   const toggleTodo = dispatch.TOGGLE_TODO()
   return <input type="checkbox" checked={completed} onChange={toggleTodo} />
 }
