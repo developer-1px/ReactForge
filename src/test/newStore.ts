@@ -6,6 +6,8 @@ const isObject = (target: unknown): target is object => Object(target) === targe
 
 const isProxiable = (target: unknown) => isObject(target) && !NON_PROXY_TYPES.some((type) => target instanceof type)
 
+const valueOf = <T>(target: T): T => (target && typeof target.valueOf === "function" ? (target.valueOf() as T) : target)
+
 const mapCacheValueOf = <T>(key: unknown, map: Map<unknown, T>, data: T): T =>
   map.has(key) ? (map.get(key) as T) : void map.set(key, data) || data
 
@@ -15,6 +17,9 @@ const trackedObjects = new Set<object>()
 //
 // Store
 // --------------------------------------------------------------------
+type Mutable<T> = {
+  -readonly [P in keyof T]: T[P]
+}
 
 const STORE = Symbol("@@store")
 const registerStorePrototype = (target: object) => {
@@ -43,12 +48,16 @@ function createStoreProxy<State extends object>(obj: State | object, root: State
     storeProxyMap,
     new Proxy(obj, {
       get(target, prop, receiver) {
+        if (prop === "valueOf") {
+          return () => target
+        }
+
         const result = Reflect.get(target, prop, receiver)
         if (!trackedObjects.has(result)) {
           return result
         }
 
-        return createStoreProxy(result, root)
+        return createStoreProxy(valueOf(result), root)
       },
 
       // store.id = key
@@ -122,6 +131,10 @@ const createSnapshotPath = (obj: object, marked: Map<unknown, Record<PropertyKey
     snapshotMap,
     new Proxy(obj, {
       get(target, prop, receiver) {
+        if (prop === "valueOf") {
+          return () => target
+        }
+
         const mark = mapCacheValueOf(target, marked, {})
         mark[prop] = target[prop]
         trackedObjects.add(target)
@@ -153,8 +166,10 @@ function createSnapshot<State extends object>(store: State) {
   }
 
   const mutationHandler = (...args) => {
-    reconcile((snapshotKeys) => updateCallbacks.forEach((cb) => cb(snapshotKeys)))
-    marker.clear()
+    reconcile((snapshotKeys) => {
+      updateCallbacks.forEach((cb) => cb(snapshotKeys))
+      marker.clear()
+    })
   }
 
   const subscribe = (callback: Function) => {
@@ -180,13 +195,17 @@ const createDraftProxyPath = (obj: object, draftMap: Map<unknown, object>): obje
     draftMap,
     new Proxy(obj, {
       get(target, prop, receiver) {
+        if (prop === "valueOf") {
+          return () => target
+        }
+
         const result = Reflect.get(target, prop, receiver)
         if (Reflect.getOwnPropertyDescriptor(target, prop)) {
           return result
         }
 
         if (isProxiable(result)) {
-          Reflect.set(target, prop, Object.create(result), receiver)
+          Reflect.set(target, prop, Object.create(valueOf(result)), receiver)
           return createDraftProxyPath(result, draftMap)
         }
 
@@ -216,6 +235,10 @@ type MutateFn<State, Actions> = (state: State, dispatch: Actions) => void | unkn
 type On<Actions, State> = {
   [K in keyof Actions]: (fn: (...args: Actions[K] extends (...args: infer P) => unknown ? P : never[]) => MutateFn<State, Actions>) => void
 }
+type ConditionFn<State> = (state: State) => boolean
+type Can<Actions, State> = {
+  [K in keyof Actions]: (fn: (...args: Actions[K] extends (...args: infer P) => unknown ? P : never[]) => ConditionFn<State>) => void
+}
 type ReducerFn<State, Actions> = (on: On<Actions, State>) => void
 
 const noop = () => {}
@@ -223,10 +246,12 @@ const noop = () => {}
 class Reducer<State extends object, Actions, T> {
   public value: T | undefined
   public computed: (state: State) => T
+  public guardFn: ReducerFn<State, Actions> = () => true
 
   constructor(
     public init: Init<State, T>,
-    public reducerFn: ReducerFn<State, Actions>
+    public reducerFn: ReducerFn<State, Actions>,
+    public state: State
   ) {
     this.value = typeof init !== "function" ? init : undefined
     this.computed = typeof init === "function" ? init : undefined
@@ -248,12 +273,14 @@ const traverseReducer = <T extends object>(
     return
   }
 
+  // @FIXME: 1depth만 하자!! 깊이 다 들어가면 너무 많은 reducer를 찾아야 한다!!
+  // @FIXME: 아니라면 store에 사용하는 reducer만 보관하는 로직을 작성해야한다.
   Object.entries(Object.getPrototypeOf(obj)).forEach(([key, value]) => {
     const currentPath = [...path, key]
     const res = callback(value, path, key)
-    if (res !== false && isObject(value)) {
-      traverseReducer(value, callback, currentPath)
-    }
+    // if (res !== false && isObject(value)) {
+    //   traverseReducer(value, callback, currentPath)
+    // }
   })
 }
 
@@ -271,6 +298,22 @@ const deepMerge = (target: Record<string, unknown>, source: Record<string, unkno
     }
   })
   return target
+}
+
+const createCan = <State, Actions>(type: string, payload: unknown[], draft: State) => {
+  const guard = {isPass: true}
+  return [
+    guard,
+    new Proxy(Function, {
+      get: (_, actionType: string) => (fn: (...args: unknown[]) => ConditionFn<State, Actions>) => {
+        if (actionType === type) {
+          if (guard.isPass && !fn(...payload)(draft)) {
+            guard.isPass = false
+          }
+        }
+      },
+    }) as Can<Actions, State>,
+  ] as const
 }
 
 const createOn = <State, Actions>(type: string, payload: unknown[], draft: State, dispatch: Dispatch<Actions>) => {
@@ -318,7 +361,7 @@ function createDispatch<State extends object, Actions>(store: State, state: Stat
 
     // reduce 실행
     traverseReducer(store, (reducer, path, prop) => {
-      if (reducer instanceof Reducer) {
+      if (reducer instanceof Reducer && reducer.state === state) {
         const draft = createDraftProxy(state)
         const on = createOn<State, Actions>(type, payload, draft, dispatch)
         reducer.reducerFn(on)
@@ -338,7 +381,7 @@ function createDispatch<State extends object, Actions>(store: State, state: Stat
     get(_, type: string) {
       return (...payload: unknown[]) => {
         const action = {type, payload}
-        middleware({dispatch, getState: () => state})(next)(action)
+        middleware({dispatch, state, options, getState: () => state})(next)(action)
       }
     },
 
@@ -370,18 +413,28 @@ const useStoreFactory = <State extends object, Actions>(_state: State) => {
 // createStorePart
 // -----------------------------------------------------------------------------------------------
 
+let logger_index = 1
 const logger = (api) => (next) => (action) => {
   if (!globalThis.document) {
     next(action)
     return
   }
 
+  const debugLabel = api.options?.debugLabel ?? ""
+
   const {type, payload} = action
-  console.group(type + "(", ...payload, ")")
+  console.group("#" + logger_index++, debugLabel, type + "(", ...payload, ")")
   console.groupCollapsed("(callstack)")
   console.trace("")
   console.groupEnd()
-  next(action)
+
+  try {
+    next(action)
+  } catch (e) {
+    const state = api.getState()
+    console.log(state)
+    throw e
+  }
   console.log(api.getState())
   console.groupEnd()
 }
@@ -399,11 +452,19 @@ export function createStorePart<State extends object, Actions>(options = {}) {
 
   const snapshot = () => createSnapshot<State>(state)
 
-  const reducer = <T, R extends T>(init: Init<State, T>, fn: ReducerFn<State, Actions> = noop): R => new Reducer(init, fn) as R
-
   const dispatch = createDispatch<State, Actions>(store, state, options)
   const proto = registerStorePrototype(store)
   proto.dispatch = dispatch
+
+  const reducer = <T, R extends T>(init: Init<State, T>, fn: ReducerFn<State, Actions> = noop): R => new Reducer(init, fn, state) as R
+
+  reducer.withGuard = (fn) => {
+    return (init, fn) => {
+      const r = reducer(init, fn)
+      r.guardFn = fn
+      return r
+    }
+  }
 
   //
   // React
@@ -416,17 +477,23 @@ export function createStorePart<State extends object, Actions>(options = {}) {
 //
 // createStore
 // ----------------------------------------------------------------------------------
-type ReducerFactoryFn<State, Actions> = <T, R extends T>(init: Init<State, T>, fn?: ReducerFn<State, Actions>) => R
-
-interface Builder<State, Actions> {
-  store: State
-  reducer: ReducerFactoryFn<State, Actions>
+interface ReducerFactoryFn<State, Actions> {
+  <T, R extends T>(init: Init<State, T>, fn?: ReducerFn<State, Actions>): R
+  withGuard(fn: (can: Can<Actions, State>) => void): ReducerFactoryFn<State, Actions>
 }
 
-export function createStore<State extends object, Actions = null>(init: (builder: Builder<State, Actions>) => void, options = tmpOption) {
-  const {store, reducer, useStore} = createStorePart<State, Actions>(options)
+interface Builder<State, Actions> {
+  store: Mutable<State>
+  reducer: ReducerFactoryFn<State, Actions>
+  dispatch: Dispatch<Actions>
+}
 
-  init({store, reducer})
+export function createStore<State extends object = object, Actions extends object = object>(
+  init: (builder: Builder<State, Actions>) => void = noop,
+  options = tmpOption
+) {
+  const {store, reducer, dispatch, useStore} = createStorePart<State, Actions>(options)
+  init({store, reducer, dispatch})
   return useStore
 }
 
@@ -434,25 +501,36 @@ export function createStore<State extends object, Actions = null>(init: (builder
 //
 // createComponentStore
 // ------------------------------------------------------------------------------------------
-export function createComponentStore<State extends object, Actions>(
-  init: (builder: Builder<State, Actions>) => void,
-  repository: Record<PropertyKey, State> = {}
-) {
+export function createComponentStore<State extends object, Actions>(init: (builder: Builder<State, Actions>) => void, label: string = "") {
   const ComponentStoreContext = createContext<string | number>("")
 
-  const memo = Object.create(null) as Record<string, () => UseStore<State, Actions>>
+  const memo = Object.create(null) as Record<PropertyKey, () => UseStore<State, Actions>>
 
-  const useComponentStore = (...args) => {
-    const id = useContext(ComponentStoreContext)
+  const repository: Record<PropertyKey, State & {dispatch: Dispatch<Actions>}> = {}
 
-    // @FIXME!!
+  // @FIXME: 리파지토리 개념 다시 만들자!
+  repository.of = (id: string) => {
+    if (memo[id]) return repository[id]
+
     repository[id] = repository[id] || {}
     const options = {
       initValue: repository[id],
+      debugLabel: label + "." + id,
     }
 
-    const useStore = memo[id] ?? (memo[id] = createStore<State, Actions>(init, options))
-    return useStore(...args)
+    if (!memo[id]) memo[id] = createStore<State, Actions>(init, options)
+    return repository[id]
+  }
+
+  const useComponentStore = (id: PropertyKey | undefined = undefined, ...args) => {
+    const contextId = useContext(ComponentStoreContext)
+    id = id ?? contextId
+
+    // @FIXME!!
+    // console.log("id!!!", id)
+    repository.create(id)
+    const useStore = memo[id]
+    return useStore(id, ...args)
   }
 
   const ComponentStoreProvider = (props: {id: string | number; key: Key; children: ReactNode}) =>

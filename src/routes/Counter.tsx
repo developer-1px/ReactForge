@@ -15,6 +15,7 @@ interface Actions {
 }
 
 const useStore = createStore<State, Actions>(({store, reducer}) => {
+  // 1
   store.count = reducer(0, (on) => {
     on.INCREASE((by) => (state) => (state.count += by))
     on.DECREASE((by) => (state) => (state.count -= by))

@@ -182,7 +182,7 @@ const onkeydown = (event) => {
 //   .correct:bg(--color-correct) .correct:c(#fff) .correct:b(none)
 //   .present:bg(--color-present) .present:c(#fff) .present:b(none)
 // {row[index]?.animation} .pop:b(2/--color-tone-2)
-// {row[index]?.type}">{row[index]?.char ?? ''}</div>
+// {row[index]?.type}">{row[index]?.chars ?? ''}</div>
 // {/each}
 // </div>
 //   {/each}

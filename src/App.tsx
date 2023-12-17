@@ -3,6 +3,7 @@ import CounterApp from "./routes/Counter.tsx"
 import "./App.css"
 import CounterStoreApp from "./routes/CounterMulti.tsx"
 import TodoList from "./routes/TodoList.tsx"
+import Wordle from "./routes/Wordle.tsx"
 
 export default function App() {
   return (
@@ -12,6 +13,7 @@ export default function App() {
           <Route index element={<CounterApp />} />
           <Route path="counterStore" element={<CounterStoreApp />} />
           <Route path="todoList" element={<TodoList />} />
+          <Route path="wordle" element={<Wordle />} />
           <Route path="*" element={<NoMatch />} />
         </Route>
       </Routes>
@@ -36,7 +38,7 @@ function Layout() {
             <Link to="/todoList">TodoList</Link>
           </li>
           <li>
-            <Link to="/nothing-here">Nothing Here</Link>
+            <Link to="/wordle">Wordle</Link>
           </li>
         </ul>
       </nav>
@@ -52,14 +54,6 @@ function Layout() {
           <Outlet />
         </div>
       </div>
-    </div>
-  )
-}
-
-function Dashboard() {
-  return (
-    <div>
-      <h2>Dashboard</h2>
     </div>
   )
 }
